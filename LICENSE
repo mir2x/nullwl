@@ -1,8 +1,15 @@
-dwl - dwm for Wayland
+nullwl - Wayland compositor, a fork of dwl
 
-Copyright © 2020 dwl team
+Copyright © 2026 Mir Tanim Ahmed
 
-See also the files LICENSE.tinywl, LICENSE.dwm and LICENSE.sway.
+nullwl is a hard fork of dwl (https://codeberg.org/dwl/dwl) and contains its
+code. It is therefore distributed under the same terms as dwl, and the
+copyright notices of dwl and of the code dwl itself is derived from are kept:
+
+  LICENSE.dwl      dwl, Copyright © 2020 dwl team (GPLv3 or later)
+  LICENSE.dwm      portions based on dwm
+  LICENSE.sway     portions based on sway
+  LICENSE.tinywl   portions based on tinywl
 
 This program is free software: you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
