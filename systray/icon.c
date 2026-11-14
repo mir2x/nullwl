@@ -4,6 +4,7 @@
 #include <pixman.h>
 
 #include <ctype.h>
+#include <math.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -147,6 +148,67 @@ createfallbackicon(const char *appname, int fgcolor, struct fcft_font *font)
 		return NULL;
 
 	return glyph;
+}
+
+/* box around pixels whose alpha is noticeable; the whole image when there are none */
+static void
+icon_measure(Icon *icon)
+{
+	int w = pixman_image_get_width(icon->img), h = pixman_image_get_height(icon->img);
+	int stride = pixman_image_get_stride(icon->img) / 4;
+	const uint32_t *p = pixman_image_get_data(icon->img);
+	int x, y, x0 = w, y0 = h, x1 = -1, y1 = -1;
+
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++)
+			if ((p[(size_t)y * stride + x] >> 24) > 24) {
+				if (x < x0) x0 = x;
+				if (x > x1) x1 = x;
+				if (y < y0) y0 = y;
+				if (y > y1) y1 = y;
+			}
+	if (x1 < 0) {
+		x0 = y0 = 0;
+		x1 = w - 1;
+		y1 = h - 1;
+	}
+	icon->bx = x0;
+	icon->by = y0;
+	icon->bw = x1 - x0 + 1;
+	icon->bh = y1 - y0 + 1;
+	icon->bbox_done = 1;
+}
+
+void
+icon_draw_fitted(Icon *icon, pixman_image_t *dst, int x, int y, int size)
+{
+	int w = pixman_image_get_width(icon->img), h = pixman_image_get_height(icon->img);
+	double s, s_whole, cap;
+	int dw, dh, dx, dy;
+	pixman_transform_t tr;
+
+	if (!icon->bbox_done)
+		icon_measure(icon);
+	s = fmin((double)size / icon->bw, (double)size / icon->bh);
+	/* a tiny speck must not be blown up to fill the slot */
+	s_whole = (double)size / (w > h ? w : h);
+	cap = s_whole * 2.0;
+	if (s > cap)
+		s = cap;
+	dw = (int)lround(icon->bw * s);
+	dh = (int)lround(icon->bh * s);
+	if (dw < 1) dw = 1;
+	if (dh < 1) dh = 1;
+	dx = x + (size - dw) / 2;
+	dy = y + (size - dh) / 2;
+
+	/* pixman samples the source at T * (dst pixel - dest origin + src origin) */
+	pixman_transform_init_scale(&tr, pixman_double_to_fixed(1.0 / s), pixman_double_to_fixed(1.0 / s));
+	pixman_image_set_transform(icon->img, &tr);
+	pixman_image_set_filter(icon->img, PIXMAN_FILTER_BEST, NULL, 0);
+	pixman_image_composite32(PIXMAN_OP_OVER, icon->img, NULL, dst,
+	                         (int)lround(icon->bx * s), (int)lround(icon->by * s), 0, 0,
+	                         dx, dy, dw, dh);
 }
 
 int

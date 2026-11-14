@@ -79,7 +79,7 @@ tray_update(Tray *tray)
 	Item *item;
 	Watcher *watcher;
 	int icon_size, i = 0, canvas_width, canvas_height, n_items, spacing;
-	pixman_image_t *canvas = NULL, *img;
+	pixman_image_t *canvas = NULL;
 
 	watcher = tray_get_watcher(tray);
 	n_items = count_visible(watcher);
@@ -116,13 +116,7 @@ tray_update(Tray *tray)
 
 		if (item->icon) {
 			/* Real icon */
-			img = item->icon->img;
-			if (resize_image(img, icon_size, icon_size) < 0)
-				goto fail;
-			pixman_image_composite32(PIXMAN_OP_OVER, img, NULL,
-			                         canvas, 0, 0, 0, 0,
-			                         slot_x_start, 0, canvas_width,
-			                         canvas_height);
+			icon_draw_fitted(item->icon, canvas, slot_x_start, 0, icon_size);
 
 		} else if (item->appid) {
 			/* Font glyph alpha mask */
