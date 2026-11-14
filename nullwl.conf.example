@@ -1,0 +1,112 @@
+# nullwl.conf -- copy to ~/.config/nullwl/nullwl.conf
+#
+# Everything here overrides the built-in defaults (config.def.h). Reload with
+# Mod+Shift+C, `kill -HUP $(pidof nullwl)`, or the `reload` action.
+# A line that fails to parse is logged as "file:line: reason" and skipped.
+# '#' starts a comment only at the beginning of a line.
+
+# ---- look -----------------------------------------------------------------
+font            = monospace:size=12
+borderpx        = 1
+gap_inner_h     = 10
+gap_inner_v     = 10
+gap_outer_h     = 10
+gap_outer_v     = 10
+smartgaps       = false
+rootcolor       = #242424
+
+color.norm.fg     = #dededeff
+color.norm.bg     = #242424ff
+color.norm.border = #4d4d4dff
+color.sel.fg      = #ffffffff
+color.sel.bg      = #2e7cf7ff
+color.sel.border  = #2e7cf7ff
+color.hid.fg      = #808080ff
+color.hid.bg      = #242424ff
+color.hid.border  = #2e7cf7ff
+color.urg.fg      = #ffffffff
+color.urg.bg      = #ff453aff
+color.urg.border  = #ff453aff
+
+# ---- behaviour ------------------------------------------------------------
+sloppyfocus     = true
+autoswallow     = true
+repeat_rate     = 25
+repeat_delay    = 600
+# log_level     = error        # silent | error | info | debug
+
+# ---- input ----------------------------------------------------------------
+tap_to_click         = true
+natural_scrolling    = false
+disable_while_typing = true
+accel_profile        = adaptive     # flat | adaptive
+accel_speed          = 0.0          # -1 .. 1
+
+# ---- tags -----------------------------------------------------------------
+# There are always 9 tags; this only renames them.
+# tags = 1 2 3 4 5 6 7 8 9
+
+# ---- monitors -------------------------------------------------------------
+# monitor = name, mfact, nmaster, scale, layout, transform, x, y
+# Trailing fields are optional; '*' matches every output.
+# monitor = eDP-1, 0.5, 1, 2, tile, normal, -1, -1
+
+# ---- key bindings ---------------------------------------------------------
+# bind = MODS, key, action[, argument]
+#   MODS: SUPER ALT CTRL SHIFT joined with '+', or NONE
+#   key:  an xkb keysym name (Return, space, h, XF86AudioMute, ...). With SHIFT
+#         you can name the key itself ('1') instead of what it produces ('exclam').
+# A later bind replaces an earlier one with the same MODS and key.
+# unbind = MODS, key        removes one binding
+# unbind = all              removes every binding, built-in ones included
+bind = SUPER, Return, spawn, foot
+bind = SUPER, space, spawn, rofi -show drun
+bind = SUPER, q, killclient
+bind = SUPER+SHIFT, q, quit
+bind = SUPER+SHIFT, c, reload
+
+bind = SUPER, f, togglefullscreen
+bind = SUPER+SHIFT, space, togglefloating
+bind = SUPER, t, setlayout, tile
+bind = SUPER, m, setlayout, monocle
+bind = SUPER+SHIFT, f, setlayout, floating
+
+bind = SUPER, Down, focusstackvis, 1
+bind = SUPER, Up, focusstackvis, -1
+bind = SUPER, Left, setmfact, -0.05
+bind = SUPER, Right, setmfact, 0.05
+bind = SUPER, i, incnmaster, 1
+bind = SUPER, d, incnmaster, -1
+bind = SUPER+SHIFT, Return, zoom
+
+bind = SUPER, comma, focusmon, left
+bind = SUPER, period, focusmon, right
+bind = SUPER+SHIFT, comma, tagmon, left
+bind = SUPER+SHIFT, period, tagmon, right
+
+bind = SUPER, 0, view, all
+bind = SUPER+SHIFT, 0, tag, all
+
+# view / toggleview / tag / toggletag on keys 1-9:
+#   SUPER+n, SUPER+CTRL+n, SUPER+SHIFT+n, SUPER+CTRL+SHIFT+n
+bindtags = SUPER
+
+bind = NONE, XF86AudioRaiseVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ +10%
+bind = NONE, XF86AudioLowerVolume, spawn, pactl set-sink-volume @DEFAULT_SINK@ -10%
+bind = NONE, XF86AudioMute, spawn, pactl set-sink-mute @DEFAULT_SINK@ toggle
+
+# ---- mouse bindings -------------------------------------------------------
+# mousebind = context, MODS, button, action[, argument]
+#   context: tag ltsymbol status title client root tray
+#   button:  btn_left btn_right btn_middle btn_side btn_extra
+# mousebind = client, SUPER, btn_left, moveresize, move
+# mousebind = client, SUPER, btn_right, moveresize, resize
+
+# ---- window rules ---------------------------------------------------------
+# rule = appid:foot, title:..., tags:3, floating:1, terminal:1, noswallow:1, monitor:0
+# appid / title are substring matches.
+rule = appid:foot, terminal:1, noswallow:1
+
+# ---- autostart ------------------------------------------------------------
+# Run once at startup through `sh -c`; not re-run on reload.
+# exec-once = swaybg -i ~/Pictures/wallpaper.jpg -m fill

@@ -36,6 +36,20 @@ nullwl's own changes: coloured status text in the bar, ordered shutdown with
 child cleanup, a StatusNotifierItem system tray with a rofi menu, XWayland
 enabled, the Tokyo Night theme, and keybinding changes.
 
+## Configuration
+
+nullwl reads `~/.config/nullwl/nullwl.conf` (or `-c file`). `config.def.h`
+holds the built-in defaults, so nullwl boots even with no file at all. Start
+from [`nullwl.conf.example`](nullwl.conf.example), which documents every
+option: appearance, input, key and mouse bindings, window rules, monitors,
+autostart.
+
+Reload without restarting: `Super+Shift+C`, or `kill -HUP $(pidof nullwl)`.
+The file is reset to the defaults and re-read, so deleting a line really
+removes it. A bad line is reported as `file:line: reason` and skipped.
+Options that are only read at startup (font, bar and tray switches) say so
+when they change.
+
 ## Building
 
 Dependencies: wlroots 0.20 (with libinput, and X11 for XWayland), wayland,

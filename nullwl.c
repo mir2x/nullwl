@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -87,7 +88,6 @@
 #define VISIBLEON(C, M)         ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]) && !(C)->ishidden && !(C)->swallowedby)
 #define VISIBLE(C, M)           ((M) && (C)->mon == (M) && ((C)->tags & (M)->tagset[(M)->seltags]))
 #define LENGTH(X)               (sizeof X / sizeof X[0])
-#define END(A)                  ((A) + LENGTH(A))
 #define TAGMASK                 ((1u << LENGTH(tags)) - 1)
 #define LISTEN(E, L, H)         wl_signal_add((E), ((L)->notify = (H), (L)))
 #define LISTEN_STATIC(E, H)     do { struct wl_listener *_l = ecalloc(1, sizeof(*_l)); _l->notify = (H); wl_signal_add((E), _l); } while (0)
@@ -114,7 +114,7 @@ typedef struct {
 	unsigned int mod;
 	unsigned int button;
 	void (*func)(const Arg *);
-	const Arg arg;
+	Arg arg;
 } Button;
 
 typedef struct Pertag Pertag;
@@ -170,7 +170,7 @@ typedef struct {
 	uint32_t mod;
 	xkb_keysym_t keysym;
 	void (*func)(const Arg *);
-	const Arg arg;
+	Arg arg;
 } Key;
 
 typedef struct {
@@ -179,6 +179,7 @@ typedef struct {
 
 	int nsyms;
 	const xkb_keysym_t *keysyms; /* invalid if nsyms == 0 */
+	xkb_keysym_t basesym; /* unshifted keysym of the key being repeated */
 	uint32_t mods; /* invalid if nsyms == 0 */
 	struct wl_event_source *key_repeat_source;
 
@@ -328,6 +329,7 @@ static void createlocksurface(struct wl_listener *listener, void *data);
 static void createmon(struct wl_listener *listener, void *data);
 static void createnotify(struct wl_listener *listener, void *data);
 static void createpointer(struct wlr_pointer *pointer);
+static void destroypointerdev(struct wl_listener *listener, void *data);
 static void createpointerconstraint(struct wl_listener *listener, void *data);
 static void createpopup(struct wl_listener *listener, void *data);
 static void cursorconstrain(struct wlr_pointer_constraint_v1 *constraint);
@@ -364,7 +366,7 @@ static void hide(const Arg *arg);
 static void incnmaster(const Arg *arg);
 static void incgaps(const Arg *arg);
 static void inputdevice(struct wl_listener *listener, void *data);
-static int keybinding(uint32_t mods, xkb_keysym_t sym);
+static int keybinding(uint32_t mods, xkb_keysym_t sym, xkb_keysym_t base);
 static void keypress(struct wl_listener *listener, void *data);
 static void keypressmod(struct wl_listener *listener, void *data);
 static int keyrepeat(void *data);
@@ -407,6 +409,7 @@ static void setruleisfloating(const Arg *arg);
 static void setscratchpad(const Arg *arg);
 static void setsel(struct wl_listener *listener, void *data);
 static void setup(void);
+static int handlesighup(int signo, void *data);
 static void show(const Arg *arg);
 static void showall(const Arg *arg);
 static void spawn(const Arg *arg);
@@ -562,11 +565,34 @@ static struct wlr_xwayland *xwayland;
 static pid_t *autostart_pids;
 static size_t autostart_len;
 
-/* configuration, allows nested code to access above variables */
+/* runtime configuration: the lists live here, rtconf.h fills them */
+static Key *keys;
+static size_t nkeys;
+static Button *buttons;
+static size_t nbuttons;
+static Rule *rules; /* rules from the config; drules = these + rules added at runtime */
+static size_t nrules;
+static MonitorRule *monrules;
+static size_t nmonrules;
+static const char **autostart;
+
+typedef struct {
+	struct wlr_pointer *pointer;
+	struct wl_listener destroy;
+	struct wl_list link;
+} PointerDev;
+static struct wl_list pointerdevs;
+static void configurepointer(struct wlr_pointer *pointer);
+static void reloadconfig(const Arg *arg);
+
+/* built-in defaults, allows nested code to access above variables */
 #include "config.h"
 
 /* attempt to encapsulate suck into one file */
 #include "client.h"
+
+/* config file parsing and (re)loading */
+#include "rtconf.h"
 
 struct Pertag {
 	unsigned int curtag, prevtag; /* current and previous tag */
@@ -945,7 +971,7 @@ buttonpress(struct wl_listener *listener, void *data)
 
 		keyboard = wlr_seat_get_keyboard(seat);
 		mods = keyboard ? wlr_keyboard_get_modifiers(keyboard) : 0;
-		for (b = buttons; b < END(buttons); b++) {
+		for (b = buttons; b < buttons + nbuttons; b++) {
 			if (CLEANMASK(mods) == CLEANMASK(b->mod) && event->button == b->button && click == b->click && b->func) {
                 if ((click == ClkTitle || click == ClkTray) && b->arg.i == 0)
 				    b->func(&arg);
@@ -1440,7 +1466,7 @@ createmon(struct wl_listener *listener, void *data)
 	wlr_output_state_init(&state);
 	/* Initialize monitor state using configured rules */
 	m->tagset[0] = m->tagset[1] = 1;
-	for (r = monrules; r < END(monrules); r++) {
+	for (r = monrules; r < monrules + nmonrules; r++) {
 		if (!r->name || strstr(wlr_output->name, r->name)) {
 			m->m.x = r->x;
 			m->m.y = r->y;
@@ -1539,7 +1565,7 @@ createnotify(struct wl_listener *listener, void *data)
 }
 
 void
-createpointer(struct wlr_pointer *pointer)
+configurepointer(struct wlr_pointer *pointer)
 {
 	struct libinput_device *device;
 	if (wlr_input_device_is_libinput(&pointer->base)
@@ -1578,7 +1604,27 @@ createpointer(struct wlr_pointer *pointer)
 			libinput_device_config_accel_set_speed(device, accel_speed);
 		}
 	}
+}
 
+void
+destroypointerdev(struct wl_listener *listener, void *data)
+{
+	PointerDev *pd = wl_container_of(listener, pd, destroy);
+
+	wl_list_remove(&pd->destroy.link);
+	wl_list_remove(&pd->link);
+	free(pd);
+}
+
+void
+createpointer(struct wlr_pointer *pointer)
+{
+	PointerDev *pd = ecalloc(1, sizeof(*pd));
+
+	pd->pointer = pointer;
+	LISTEN(&pointer->base.events.destroy, &pd->destroy, destroypointerdev);
+	wl_list_insert(&pointerdevs, &pd->link);
+	configurepointer(pointer);
 	wlr_cursor_attach_input_device(cursor, &pointer->base);
 }
 
@@ -2224,20 +2270,20 @@ getrule(Client *c)
 				&& (!r->id || strstr(appid, r->id)))
 			goto found;
 
-	if (druleslen >= LENGTH(rules) + RULES_MAX)
+	if (druleslen >= nrules + RULES_MAX)
 		return NULL; /* No free slots left */
 
 	r = drules + druleslen++;
 
 	/* Use [NULL,NULL] as the default rule if exists */
-	for (e = rules; e < END(rules); e++)
+	for (e = rules; e < rules + nrules; e++)
 		if (!e->title && !e->id) {
 			*r = *e;
 			break;
 		}
 
 	/* No default rule found, set reasoble defaults */
-	if (e >= END(rules)) {
+	if (e >= rules + nrules) {
 		r->monitor = -1;
 	}
 
@@ -2366,7 +2412,7 @@ inputdevice(struct wl_listener *listener, void *data)
 }
 
 int
-keybinding(uint32_t mods, xkb_keysym_t sym)
+keybinding(uint32_t mods, xkb_keysym_t sym, xkb_keysym_t base)
 {
 	/*
 	 * Here we handle compositor keybindings. This is when the compositor is
@@ -2374,9 +2420,12 @@ keybinding(uint32_t mods, xkb_keysym_t sym)
 	 * processing.
 	 */
 	const Key *k;
-	for (k = keys; k < END(keys); k++) {
+	for (k = keys; k < keys + nkeys; k++) {
+		/* match the symbol the key produced (e.g. exclam), or the key
+		 * itself without Shift (e.g. 1), so 'SHIFT, 1' works */
 		if (CLEANMASK(mods) == CLEANMASK(k->mod)
-				&& xkb_keysym_to_lower(sym) == xkb_keysym_to_lower(k->keysym)
+				&& (xkb_keysym_to_lower(sym) == xkb_keysym_to_lower(k->keysym)
+					|| (base != XKB_KEY_NoSymbol && xkb_keysym_to_lower(base) == xkb_keysym_to_lower(k->keysym)))
 				&& k->func) {
 			k->func(&k->arg);
 			return 1;
@@ -2402,6 +2451,14 @@ keypress(struct wl_listener *listener, void *data)
 
 	int handled = 0;
 	uint32_t mods = wlr_keyboard_get_modifiers(&group->wlr_group->keyboard);
+	xkb_keysym_t base = XKB_KEY_NoSymbol;
+	{
+		struct xkb_state *xs = group->wlr_group->keyboard.xkb_state;
+		const xkb_keysym_t *bs;
+		if (xkb_keymap_key_get_syms_by_level(xkb_state_get_keymap(xs), keycode,
+				xkb_state_key_get_layout(xs, keycode), 0, &bs) > 0)
+			base = bs[0];
+	}
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
@@ -2409,12 +2466,13 @@ keypress(struct wl_listener *listener, void *data)
 	 * attempt to process a compositor keybinding. */
 	if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
 		for (i = 0; i < nsyms; i++)
-			handled = keybinding(mods, syms[i]) || handled;
+			handled = keybinding(mods, syms[i], base) || handled;
 	}
 
 	if (handled && group->wlr_group->keyboard.repeat_info.delay > 0) {
 		group->mods = mods;
 		group->keysyms = syms;
+		group->basesym = base;
 		group->nsyms = nsyms;
 		wl_event_source_timer_update(group->key_repeat_source,
 				group->wlr_group->keyboard.repeat_info.delay);
@@ -2460,7 +2518,7 @@ keyrepeat(void *data)
 			1000 / group->wlr_group->keyboard.repeat_info.rate);
 
 	for (i = 0; i < group->nsyms; i++)
-		keybinding(group->mods, group->keysyms[i]);
+		keybinding(group->mods, group->keysyms[i], group->basesym);
 
 	return 0;
 }
@@ -3285,6 +3343,13 @@ setsel(struct wl_listener *listener, void *data)
 	wlr_seat_set_selection(seat, event->source, event->serial);
 }
 
+int
+handlesighup(int signo, void *data)
+{
+	reloadconfig(NULL);
+	return 0;
+}
+
 void
 setup(void)
 {
@@ -3295,13 +3360,15 @@ setup(void)
 	for (i = 0; i < (int)LENGTH(sig); i++)
 		sigaction(sig[i], &sa, NULL);
 
-
+	wl_list_init(&pointerdevs);
+	loadconfig(0); /* before logging starts: it may set log_level */
 	wlr_log_init(log_level, NULL);
 
 	/* The Wayland display is managed by libwayland. It handles accepting
 	 * clients from the Unix socket, managing Wayland globals, and so on. */
 	dpy = wl_display_create();
 	event_loop = wl_display_get_event_loop(dpy);
+	wl_event_loop_add_signal(event_loop, SIGHUP, handlesighup, NULL);
 
 	/* The backend is a wlroots feature which abstracts the underlying input and
 	 * output hardware. The autocreate option will choose the most suitable
@@ -3536,9 +3603,6 @@ setup(void)
 	}
 #endif
 
-	drules = ecalloc(LENGTH(rules) + RULES_MAX, sizeof(Rule));
-	memcpy(drules, rules, sizeof(rules));
-	druleslen = LENGTH(rules);
 }
 
 void
@@ -4379,11 +4443,13 @@ main(int argc, char *argv[])
 	char *startup_cmd = NULL;
 	int c;
 
-	while ((c = getopt(argc, argv, "s:hdv")) != -1) {
+	while ((c = getopt(argc, argv, "s:c:hdv")) != -1) {
 		if (c == 's')
 			startup_cmd = optarg;
+		else if (c == 'c')
+			cfgpath = optarg;
 		else if (c == 'd')
-			log_level = WLR_DEBUG;
+			log_level = WLR_DEBUG, cfgforcedebug = 1;
 		else if (c == 'v')
 			die("nullwl " VERSION " (fork of dwl)");
 		else
@@ -4401,5 +4467,5 @@ main(int argc, char *argv[])
 	return EXIT_SUCCESS;
 
 usage:
-	die("Usage: %s [-v] [-d] [-s startup command]", argv[0]);
+	die("Usage: %s [-v] [-d] [-c config file] [-s startup command]", argv[0]);
 }

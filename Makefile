@@ -20,13 +20,14 @@ TRAYOBJS = systray/watcher.o systray/tray.o systray/item.o systray/icon.o systra
 TRAYDEPS = systray/watcher.h systray/tray.h systray/item.h systray/icon.h systray/menu.h systray/helpers.h
 
 all: nullwl
-nullwl: nullwl.o util.o dbus.o $(TRAYOBJS) $(TRAYDEPS)
-	$(CC) nullwl.o util.o dbus.o $(TRAYOBJS) $(NWLCFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
-nullwl.o: nullwl.c client.h ime.h dbus.h config.h config.mk cursor-shape-v1-protocol.h \
+nullwl: nullwl.o util.o conf.o dbus.o $(TRAYOBJS) $(TRAYDEPS)
+	$(CC) nullwl.o util.o conf.o dbus.o $(TRAYOBJS) $(NWLCFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
+nullwl.o: nullwl.c client.h ime.h dbus.h conf.h rtconf.h config.h config.mk cursor-shape-v1-protocol.h \
 	pointer-constraints-unstable-v1-protocol.h wlr-layer-shell-unstable-v1-protocol.h \
 	wlr-output-power-management-unstable-v1-protocol.h xdg-shell-protocol.h \
 	simple_scratchpad.h $(TRAYDEPS)
 util.o: util.c util.h
+conf.o: conf.c conf.h
 dbus.o: dbus.c dbus.h
 systray/watcher.o: systray/watcher.c $(TRAYDEPS)
 systray/tray.o: systray/tray.c $(TRAYDEPS)
@@ -65,7 +66,7 @@ clean:
 dist: clean
 	mkdir -p nullwl-$(VERSION)
 	cp -R LICENSE* Makefile CHANGELOG.md README.md client.h config.def.h \
-		config.mk protocols nullwl.1 nullwl.c ime.h util.c util.h nullwl.desktop \
+		config.mk protocols nullwl.1 nullwl.c ime.h util.c util.h conf.c conf.h rtconf.h nullwl.desktop nullwl.conf.example \
 		nullwl-$(VERSION)
 	tar -caf nullwl-$(VERSION).tar.gz nullwl-$(VERSION)
 	rm -rf nullwl-$(VERSION)
