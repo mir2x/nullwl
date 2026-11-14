@@ -33,6 +33,7 @@ usage(void)
 	      "  dispatch ACTION [ARG...]    (or: nullwlctl ACTION [ARG...])\n"
 	      "  set OPTION VALUE\n"
 	      "  focus ID | close ID\n"
+	      "  popup [state|key N|motion X Y|click X Y|scroll X Y D|dump F|close]  (the tray menu)\n"
 	      "  dump-tray FILE.png          (debugging: render the tray to a file)\n"
 	      "  subscribe [EVENT...]\n"
 	      "  raw JSON\n", stderr);
@@ -131,6 +132,31 @@ build_request(int argc, char **argv)
 		append_raw(&b, &len, &cap, ",\"value\":");
 		append_str(&b, &len, &cap, joined);
 		free(joined);
+	} else if (!strcmp(cmd, "popup")) {
+		/* popup [state] | key NAME | motion X Y | click X Y | scroll X Y D | dump FILE | close */
+		const char *op = argc > 1 ? argv[1] : "state";
+		const char *fields[3] = {0};
+		const char *names[3] = {0};
+		int n = 0, k;
+
+		if (!strcmp(op, "key")) { names[0] = "name"; n = 1; }
+		else if (!strcmp(op, "motion") || !strcmp(op, "click")) { names[0] = "x"; names[1] = "y"; n = 2; }
+		else if (!strcmp(op, "scroll")) { names[0] = "x"; names[1] = "y"; names[2] = "delta"; n = 3; }
+		else if (!strcmp(op, "dump")) { names[0] = "path"; n = 1; }
+		else if (strcmp(op, "state") && strcmp(op, "close"))
+			usage();
+		if (argc != 2 + n && !(n == 0 && argc <= 2))
+			usage();
+		append_str(&b, &len, &cap, "popup");
+		append_raw(&b, &len, &cap, ",\"op\":");
+		append_str(&b, &len, &cap, op);
+		for (k = 0; k < n; k++) {
+			fields[k] = argv[2 + k];
+			append_raw(&b, &len, &cap, ",\"");
+			append_raw(&b, &len, &cap, names[k]);
+			append_raw(&b, &len, &cap, "\":");
+			append_str(&b, &len, &cap, fields[k]);
+		}
 	} else if (!strcmp(cmd, "dump-tray")) {
 		if (argc != 2)
 			usage();

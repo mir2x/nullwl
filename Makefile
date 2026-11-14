@@ -24,7 +24,7 @@ nullwlctl: nullwlctl.c
 	$(CC) $(NWLDEVCFLAGS) -D_POSIX_C_SOURCE=200809L $(CFLAGS) $(LDFLAGS) -o $@ nullwlctl.c
 nullwl: nullwl.o util.o conf.o ipc.o dbus.o $(TRAYOBJS) $(TRAYDEPS)
 	$(CC) nullwl.o util.o conf.o ipc.o dbus.o $(TRAYOBJS) $(NWLCFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
-nullwl.o: nullwl.c client.h ime.h dbus.h conf.h rtconf.h ipc.h ipcstate.h config.h config.mk cursor-shape-v1-protocol.h \
+nullwl.o: nullwl.c popup.h client.h ime.h dbus.h conf.h rtconf.h ipc.h ipcstate.h config.h config.mk cursor-shape-v1-protocol.h \
 	pointer-constraints-unstable-v1-protocol.h wlr-layer-shell-unstable-v1-protocol.h \
 	wlr-output-power-management-unstable-v1-protocol.h xdg-shell-protocol.h \
 	simple_scratchpad.h $(TRAYDEPS)

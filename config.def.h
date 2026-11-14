@@ -114,8 +114,6 @@ static enum libinput_config_tap_button_map button_map = LIBINPUT_CONFIG_TAP_MAP_
 	{ MODKEY|WLR_MODIFIER_CTRL|WLR_MODIFIER_SHIFT,SKEY,toggletag, {.ui = 1 << TAG} }
 
 static const char *termcmd[] = { "foot", NULL };
-/* menu used for tray right-click menus */
-static const char *dmenucmd[] = { "rofi", "-dmenu", "-p", "tray", NULL };
 
 static const Key defkeys[] = {
 	/* modifier                  key                  function          argument */

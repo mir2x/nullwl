@@ -33,7 +33,7 @@ Also from upstream dwl's contributor Guido Cella: IME support (input-method
 and text-input protocols) and a use-after-free fix.
 
 nullwl's own changes: coloured status text in the bar, ordered shutdown with
-child cleanup, a StatusNotifierItem system tray with a rofi menu, XWayland
+child cleanup, a StatusNotifierItem system tray (themed icons, native popup menus with submenus, scroll), XWayland
 enabled, the Tokyo Night theme, and keybinding changes.
 
 ## Configuration
@@ -66,8 +66,8 @@ nullwlctl subscribe focus tags
 ## Building
 
 Dependencies: wlroots 0.20 (with libinput, and X11 for XWayland), wayland,
-wayland-protocols, libinput, xkbcommon, pixman, fcft, libdbus, xcb and
-xcb-icccm, and pkg-config. `Xwayland` is needed at runtime.
+wayland-protocols, libinput, xkbcommon, pixman, fcft, libdbus, cairo,
+librsvg, xcb and xcb-icccm, and pkg-config. `Xwayland` is needed at runtime.
 
 ```
 cp config.def.h config.h   # first time only, then edit config.h

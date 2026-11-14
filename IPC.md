@@ -27,6 +27,8 @@ arrays of those. A request line may be up to 64 KiB.
 | `set` | `option`, `value` | `null`. Changes an option live, until the next reload |
 | `focus` / `close` | `id` of a window | `null` |
 | `reload` | | `{errors, messages}` |
+| `popup` | `op`: `state` `key` `motion` `click` `scroll` `dump` `close`, plus `name`, `x`, `y`, `delta` or `path` | `state`: `{open, panels[{x,y,w,h,hover,rows[...]}]}`, else `null`. Drives the open tray menu (for scripts and tests); coordinates are layout coordinates |
+| `dump-tray` | `path` | `null`. Writes the tray as a PNG |
 | `subscribe` | optional `events`: list of event names | `null`, then events follow |
 
 `nullwlctl` maps these directly: `nullwlctl get clients`,
@@ -38,7 +40,8 @@ arrays of those. A request line may be up to 64 KiB.
   `tagset`, `occupied` and `urgent` are bit masks, bit 0 = tag 1.
 - `clients` / `focused`: `id app_id title pid monitor tags floating fullscreen hidden urgent focused xwayland x y width height`.
   `id` is stable for the life of the window.
-- `tray`: `[{bus_name, object, app_id, ready}]`.
+- `tray`: `[{bus_name, object, app_id, title, status, icon_name, icon_source, has_menu, menu_only, ready}]`.
+  `status` is `passive` (hidden), `active` or `attention`; `icon_source` is `theme`, `pixmap` or `none`.
 - `errors`: the file and the messages from the last (re)load, as `file:line: reason`.
 - `options`: every option with its current `value` and whether it is `restart`-only.
 

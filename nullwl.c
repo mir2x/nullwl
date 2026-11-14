@@ -605,6 +605,7 @@ static uint32_t nextclientid;
 
 /* IPC: commands, state snapshots and events */
 #include "ipcstate.h"
+#include "popup.h"
 
 struct Pertag {
 	unsigned int curtag, prevtag; /* current and previous tag */
@@ -814,6 +815,10 @@ axisnotify(struct wl_listener *listener, void *data)
 	struct wlr_scene_buffer *buffer;
 	Monitor *m;
 	Client *under = NULL;
+	if (popup_active()) {
+		popup_scroll(cursor->x, cursor->y, event->delta);
+		return;
+	}
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
 	/* Scrolling over a tray icon goes to that icon's application, not to a window */
@@ -932,6 +937,10 @@ buttonpress(struct wl_listener *listener, void *data)
 	int traywidth;
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+
+	if (popup_active() && popup_button(cursor->x, cursor->y,
+			event->state == WL_POINTER_BUTTON_STATE_PRESSED))
+		return;
 
 	click = ClkRoot;
 	xytonode(cursor->x, cursor->y, NULL, &c, NULL, NULL, NULL);
@@ -1153,6 +1162,7 @@ cleanupmon(struct wl_listener *listener, void *data)
 	LayerSurface *l, *tmp;
 	size_t i;
 
+	popup_dismiss(0);
 	ipc_changed();
 	/* m->layers[i] are intentionally not unlinked */
 	for (i = 0; i < LENGTH(m->layers); i++) {
@@ -2003,19 +2013,19 @@ traynotify(void *data)
 void
 trayactivate(const Arg *arg)
 {
-	tray_click(selmon->tray, arg->ui, TrayLeft, (int)cursor->x, (int)cursor->y, dmenucmd);
+	tray_click(selmon->tray, arg->ui, TrayLeft, (int)cursor->x, (int)cursor->y, popup_open);
 }
 
 void
 traysecondary(const Arg *arg)
 {
-	tray_click(selmon->tray, arg->ui, TrayMiddle, (int)cursor->x, (int)cursor->y, dmenucmd);
+	tray_click(selmon->tray, arg->ui, TrayMiddle, (int)cursor->x, (int)cursor->y, popup_open);
 }
 
 void
 traymenu(const Arg *arg)
 {
-	tray_click(selmon->tray, arg->ui, TrayRight, (int)cursor->x, (int)cursor->y, dmenucmd);
+	tray_click(selmon->tray, arg->ui, TrayRight, (int)cursor->x, (int)cursor->y, popup_open);
 }
 
 /* Walks stext the way it is drawn, honouring ^fg(rrggbb) ^bg(rrggbb) and ^fg() ^bg() to
@@ -2503,6 +2513,13 @@ keypress(struct wl_listener *listener, void *data)
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
+	/* an open popup menu takes every key */
+	if (popup_active()) {
+		if (event->state == WL_KEYBOARD_KEY_STATE_PRESSED && nsyms > 0)
+			popup_key(syms[0]);
+		return;
+	}
+
 	/* On _press_ if there is no active screen locker,
 	 * attempt to process a compositor keybinding. */
 	if (!locked && event->state == WL_KEYBOARD_KEY_STATE_PRESSED) {
@@ -2821,6 +2838,11 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
 		/* Update selmon (even while dragging a window) */
 		if (sloppyfocus)
 			selmon = xytomon(cursor->x, cursor->y);
+	}
+
+	if (popup_active()) {
+		popup_motion(cursor->x, cursor->y);
+		return;
 	}
 
 	/* Update drag icon's position */
@@ -4194,6 +4216,7 @@ updatebar(Monitor *m)
 	if (m->b.scale == m->wlr_output->scale && m->drw)
 		return;
 
+	popup_close(); /* it uses this font */
 	drwl_font_destroy(m->drw->font);
 	snprintf(fontattrs, sizeof(fontattrs), "dpi=%.2f", 96. * m->wlr_output->scale);
 	if (!(drwl_font_create(m->drw, LENGTH(fonts), fonts, fontattrs)))

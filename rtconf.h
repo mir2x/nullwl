@@ -12,6 +12,7 @@
 #include "conf.h"
 
 static void reloadconfig(const Arg *arg);
+static void popup_close(void);
 
 /* ------------------------------------------------------------------ */
 /* arena: everything the config file allocates, freed on every reload  */
@@ -766,7 +767,10 @@ applyconfig(void)
 static void
 reloadconfig(const Arg *arg)
 {
-	int errors = loadconfig(1);
+	int errors;
+
+	popup_close(); /* it holds a font the reload may replace */
+	errors = loadconfig(1);
 
 	applyconfig();
 	ipc_config_reloaded(errors);

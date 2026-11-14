@@ -38,6 +38,7 @@ ap.add_argument("--attention-name", default="")
 ap.add_argument("--pixmap", action="store_true")
 ap.add_argument("--status", default="Active")
 ap.add_argument("--menu-only", action="store_true")
+ap.add_argument("--menu", action="store_true", help="serve a dbusmenu")
 ap.add_argument("--log", default="/dev/null")
 args = ap.parse_args()
 
@@ -61,7 +62,7 @@ def get_property(conn, sender, path, iface, prop):
         "IconPixmap": pixmap_variant(), "IconThemePath": GLib.Variant("s", args.theme_path),
         "AttentionIconName": GLib.Variant("s", state["attention"]),
         "AttentionIconPixmap": GLib.Variant("a(iiay)", []),
-        "ItemIsMenu": GLib.Variant("b", args.menu_only), "Menu": GLib.Variant("o", "/NO_DBUSMENU"),
+        "ItemIsMenu": GLib.Variant("b", args.menu_only), "Menu": GLib.Variant("o", "/MenuBar" if args.menu else "/NO_DBUSMENU"),
     }[prop]
 
 def log(line):
@@ -75,6 +76,48 @@ def on_call(conn, sender, path, iface, method, params, invocation):
 conn = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 info = Gio.DBusNodeInfo.new_for_xml(XML)
 conn.register_object("/StatusNotifierItem", info.interfaces[0], on_call, get_property, None)
+
+MENU_XML = """<node><interface name="com.canonical.dbusmenu">
+<method name="GetLayout"><arg type="i" direction="in"/><arg type="i" direction="in"/><arg type="as" direction="in"/>
+<arg type="u" direction="out"/><arg type="(ia{sv}av)" direction="out"/></method>
+<method name="Event"><arg type="i" direction="in"/><arg type="s" direction="in"/><arg type="v" direction="in"/><arg type="u" direction="in"/></method>
+<method name="AboutToShow"><arg type="i" direction="in"/><arg type="b" direction="out"/></method>
+</interface></node>"""
+
+def V(sig, val):
+    return GLib.Variant(sig, val)
+
+def node(id, label=None, kids=(), **p):
+    props = {}
+    if label is not None: props["label"] = V("s", label)
+    for k, v in p.items():
+        k = k.replace("_", "-")
+        props[k] = V("b", v) if isinstance(v, bool) else V("i", v) if isinstance(v, int) else V("s", v)
+    return (id, props, [V("(ia{sv}av)", c) for c in kids])
+
+LAYOUT = node(0, None, [
+    node(1, "_Open", icon_name="document-open"),
+    node(2, type="separator"),
+    node(3, "Check me", toggle_type="checkmark", toggle_state=1),
+    node(4, "Radio", toggle_type="radio", toggle_state=1),
+    node(5, "Disabled", enabled=False),
+    node(6, "More", [node(7, "Sub one"), node(8, "Sub two"), node(9, "Hidden", visible=False)], children_display="submenu"),
+    node(10, "Quit"),
+])
+
+def on_menu_call(conn, sender, path, iface, method, params, invocation):
+    if method == "GetLayout":
+        invocation.return_value(V("(u(ia{sv}av))", (1, LAYOUT)))
+    elif method == "AboutToShow":
+        log(f"AboutToShow {params.unpack()[0]}")
+        invocation.return_value(V("(b)", (False,)))
+    else:
+        u = params.unpack()
+        log(f"Event {u[0]} {u[1]}")
+        invocation.return_value(None)
+
+if args.menu:
+    conn.register_object("/MenuBar", Gio.DBusNodeInfo.new_for_xml(MENU_XML).interfaces[0], on_menu_call, None, None)
 
 service = conn.get_unique_name()
 if args.wellknown:

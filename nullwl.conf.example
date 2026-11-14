@@ -28,6 +28,9 @@ color.urg.fg      = #ffffffff
 color.urg.bg      = #ff453aff
 color.urg.border  = #ff453aff
 
+# Icon theme for the tray (default: the GTK setting gtk-icon-theme-name)
+# icon_theme = Papirus-Dark
+
 # ---- behaviour ------------------------------------------------------------
 sloppyfocus     = true
 autoswallow     = true
@@ -99,6 +102,9 @@ bind = NONE, XF86AudioMute, spawn, pactl set-sink-mute @DEFAULT_SINK@ toggle
 # mousebind = context, MODS, button, action[, argument]
 #   context: tag ltsymbol status title client root tray
 #   button:  btn_left btn_right btn_middle btn_side btn_extra
+# Tray: left = activate (or open the menu for menu-only items), middle = secondary
+# activate, right = menu. These are the built-in defaults.
+# mousebind = tray, NONE, btn_middle, traysecondary
 # mousebind = client, SUPER, btn_left, moveresize, move
 # mousebind = client, SUPER, btn_right, moveresize, resize
 

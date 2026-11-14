@@ -246,7 +246,7 @@ tray_index_at(const Tray *tray, int x)
 }
 
 void
-tray_click(Tray *tray, unsigned int index, int button, int x, int y, const char **menucmd)
+tray_click(Tray *tray, unsigned int index, int button, int x, int y, TrayMenuFn showmenu)
 {
 	Watcher *watcher = tray_get_watcher(tray);
 	Item *item = nth_visible(watcher, index);
@@ -257,7 +257,7 @@ tray_click(Tray *tray, unsigned int index, int button, int x, int y, const char 
 	case TrayLeft:
 		/* menu-only items (ItemIsMenu) have nothing to activate */
 		if (item->is_menu && item_has_menu(item))
-			menu_show(watcher->conn, watcher->loop, item->busname, item->menu_busobj, menucmd);
+			showmenu(watcher, item->busname, item->menu_busobj, item->theme_path, x, y);
 		else
 			item_activate(item, x, y);
 		break;
@@ -266,7 +266,7 @@ tray_click(Tray *tray, unsigned int index, int button, int x, int y, const char 
 		break;
 	case TrayRight:
 		if (item_has_menu(item))
-			menu_show(watcher->conn, watcher->loop, item->busname, item->menu_busobj, menucmd);
+			showmenu(watcher, item->busname, item->menu_busobj, item->theme_path, x, y);
 		else
 			item_context_menu(item, x, y);
 		break;

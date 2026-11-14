@@ -33,8 +33,11 @@ int tray_get_icon_width (const Tray *tray);
 void tray_update (Tray *tray);
 enum { TrayLeft, TrayMiddle, TrayRight };
 int tray_index_at (const Tray *tray, int x);
+/* Called to show an item's dbusmenu; the compositor draws it. */
+typedef void (*TrayMenuFn)(Watcher *watcher, const char *busname, const char *menu_obj,
+                           const char *icondir, int x, int y);
 void tray_click (Tray *tray, unsigned int index, int button, int x, int y,
-                 const char **menucmd);
+                 TrayMenuFn showmenu);
 void tray_scroll (Tray *tray, unsigned int index, int delta, int horizontal);
 
 #endif /* TRAY_H */

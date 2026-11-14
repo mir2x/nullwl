@@ -614,6 +614,8 @@ cmdfocus(IpcClient *cl, const IpcReq *req, int close)
 	ipc_reply_ok(cl, NULL);
 }
 
+static void popup_ipc(IpcClient *cl, const IpcReq *req); /* popup.h */
+
 /* Debugging aid: write what the tray currently looks like to a PNG. */
 static void
 cmddumptray(IpcClient *cl, const IpcReq *req)
@@ -665,6 +667,8 @@ ipchandler(IpcClient *cl, const IpcReq *req, void *data)
 		cmddispatch(cl, req);
 	} else if (!strcmp(cmd, "set")) {
 		cmdset(cl, req);
+	} else if (!strcmp(cmd, "popup")) {
+		popup_ipc(cl, req);
 	} else if (!strcmp(cmd, "dump-tray")) {
 		cmddumptray(cl, req);
 	} else if (!strcmp(cmd, "focus")) {
