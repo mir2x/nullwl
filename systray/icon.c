@@ -63,6 +63,10 @@ createicon(const uint8_t *buf, int width, int height, int size)
 	uint32_t *buf_pixman = NULL;
 	uint8_t *buf_orig = NULL;
 
+	/* the data comes from another process: trust nothing about it */
+	if (width < 1 || height < 1 || width > 2048 || height > 2048 ||
+	    (long)width * height * 4 != size)
+		return NULL;
 	n_pixels = size / 4;
 
 	icon = calloc(1, sizeof(Icon));
@@ -93,6 +97,26 @@ fail:
 	free(buf_pixman);
 	free(icon);
 	return NULL;
+}
+
+/* Takes ownership of pix (premultiplied ARGB32, w*h pixels, malloc'd). */
+Icon *
+createicon_premul(uint32_t *pix, int width, int height)
+{
+	Icon *icon = calloc(1, sizeof(Icon));
+	pixman_image_t *img;
+
+	if (!icon)
+		return NULL;
+	img = pixman_image_create_bits(PIXMAN_a8r8g8b8, width, height, pix, width * 4);
+	if (!img) {
+		free(icon);
+		return NULL;
+	}
+	icon->img = img;
+	icon->buf_pixman = pix;
+	icon->size_pixman = (size_t)width * height * 4;
+	return icon;
 }
 
 void

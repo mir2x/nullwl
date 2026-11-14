@@ -2,6 +2,7 @@
 
 #include "helpers.h"
 #include "icon.h"
+#include "themeicon.h"
 #include "watcher.h"
 
 #include <dbus/dbus.h>
@@ -15,389 +16,478 @@
 // IWYU pragma: no_include "dbus/dbus-shared.h"
 
 #define RULEBSIZE 256
-#define MIN(A, B) ((A) < (B) ? (A) : (B))
+#define ICON_SIZE 32 /* what we ask the theme for; the bar scales it */
 
 static const char *match_string =
 	"type='signal',"
 	"sender='%s',"
-	"interface='" SNI_NAME
-	"',"
-	"member='NewIcon'";
+	"interface='" SNI_NAME "'";
 
-static Watcher *
-item_get_watcher(const Item *item)
+static unsigned theme_generation = 1;
+
+void
+item_theme_changed(void)
 {
-	if (!item)
-		return NULL;
-
-	return item->watcher;
+	theme_generation++;
 }
 
 static DBusConnection *
 item_get_connection(const Item *item)
 {
-	if (!item || !item->watcher)
-		return NULL;
-
-	return item->watcher->conn;
+	return item && item->watcher ? item->watcher->conn : NULL;
 }
 
-static const uint8_t *
-extract_image(DBusMessageIter *iter, dbus_int32_t *width, dbus_int32_t *height,
-              int *size)
+static char *
+xstrdup_or_null(const char *s)
 {
-	DBusMessageIter vals, bytes;
-	const uint8_t *buf;
+	return s && *s ? strdup(s) : NULL;
+}
 
-	dbus_message_iter_recurse(iter, &vals);
-	if (dbus_message_iter_get_arg_type(&vals) != DBUS_TYPE_INT32)
-		goto fail;
-	dbus_message_iter_get_basic(&vals, width);
+static void
+set_str(char **dst, const char *v)
+{
+	free(*dst);
+	*dst = xstrdup_or_null(v);
+}
 
-	dbus_message_iter_next(&vals);
-	if (dbus_message_iter_get_arg_type(&vals) != DBUS_TYPE_INT32)
-		goto fail;
-	dbus_message_iter_get_basic(&vals, height);
+/* ---- decoding the a{sv} that GetAll returns ---- */
 
-	dbus_message_iter_next(&vals);
-	if (dbus_message_iter_get_arg_type(&vals) != DBUS_TYPE_ARRAY)
-		goto fail;
-	dbus_message_iter_recurse(&vals, &bytes);
-	if (dbus_message_iter_get_arg_type(&bytes) != DBUS_TYPE_BYTE)
-		goto fail;
-	dbus_message_iter_get_fixed_array(&bytes, &buf, size);
-	if (size == 0)
-		goto fail;
+typedef struct {
+	char *id, *title, *status;
+	char *icon_name, *theme_path, *attention_name, *menu;
+	int is_menu;
+	Icon *pixmap, *attention_pixmap;
+} Props;
 
-	return buf;
+/* Pick the entry to use out of IconPixmap's a(iiay): smallest at least as big
+ * as we want, else the biggest. Returns an Icon or NULL. */
+static Icon *
+pick_pixmap(DBusMessageIter *variant)
+{
+	DBusMessageIter arr, st, bytes;
+	Icon *best = NULL;
+	int best_w = 0;
 
-fail:
+	if (dbus_message_iter_get_arg_type(variant) != DBUS_TYPE_ARRAY)
+		return NULL;
+	dbus_message_iter_recurse(variant, &arr);
+	while (dbus_message_iter_get_arg_type(&arr) == DBUS_TYPE_STRUCT) {
+		dbus_int32_t w, h;
+		const uint8_t *buf;
+		int len;
+
+		dbus_message_iter_recurse(&arr, &st);
+		dbus_message_iter_next(&arr);
+		if (dbus_message_iter_get_arg_type(&st) != DBUS_TYPE_INT32)
+			continue;
+		dbus_message_iter_get_basic(&st, &w);
+		if (!dbus_message_iter_next(&st) || dbus_message_iter_get_arg_type(&st) != DBUS_TYPE_INT32)
+			continue;
+		dbus_message_iter_get_basic(&st, &h);
+		if (!dbus_message_iter_next(&st) || dbus_message_iter_get_arg_type(&st) != DBUS_TYPE_ARRAY)
+			continue;
+		dbus_message_iter_recurse(&st, &bytes);
+		if (dbus_message_iter_get_arg_type(&bytes) != DBUS_TYPE_BYTE)
+			continue;
+		dbus_message_iter_get_fixed_array(&bytes, &buf, &len);
+		if (w != h || w < 1 || len <= 0)
+			continue;
+		/* better: first one big enough, or a bigger one when none is yet */
+		if (best && !((best_w < ICON_SIZE && w > best_w) || (w >= ICON_SIZE && w < best_w && best_w >= ICON_SIZE)))
+			continue;
+		{
+			Icon *ic = createicon(buf, w, h, len);
+			if (!ic)
+				continue;
+			if (best)
+				destroyicon(best);
+			best = ic;
+			best_w = w;
+		}
+	}
+	return best;
+}
+
+static void
+parse_props(Props *p, DBusMessageIter *reply)
+{
+	DBusMessageIter arr, entry, var;
+
+	memset(p, 0, sizeof *p);
+	if (dbus_message_iter_get_arg_type(reply) != DBUS_TYPE_ARRAY)
+		return;
+	dbus_message_iter_recurse(reply, &arr);
+	while (dbus_message_iter_get_arg_type(&arr) == DBUS_TYPE_DICT_ENTRY) {
+		const char *key = NULL, *str = NULL;
+		int type;
+
+		dbus_message_iter_recurse(&arr, &entry);
+		dbus_message_iter_next(&arr);
+		if (dbus_message_iter_get_arg_type(&entry) != DBUS_TYPE_STRING)
+			continue;
+		dbus_message_iter_get_basic(&entry, &key);
+		dbus_message_iter_next(&entry);
+		if (dbus_message_iter_get_arg_type(&entry) != DBUS_TYPE_VARIANT)
+			continue;
+		dbus_message_iter_recurse(&entry, &var);
+		type = dbus_message_iter_get_arg_type(&var);
+
+		if (type == DBUS_TYPE_STRING || type == DBUS_TYPE_OBJECT_PATH)
+			dbus_message_iter_get_basic(&var, &str);
+
+		if (!strcmp(key, "Id") && str)                     set_str(&p->id, str);
+		else if (!strcmp(key, "Title") && str)             set_str(&p->title, str);
+		else if (!strcmp(key, "Status") && str)            set_str(&p->status, str);
+		else if (!strcmp(key, "IconName") && str)          set_str(&p->icon_name, str);
+		else if (!strcmp(key, "IconThemePath") && str)     set_str(&p->theme_path, str);
+		else if (!strcmp(key, "AttentionIconName") && str) set_str(&p->attention_name, str);
+		else if (!strcmp(key, "Menu") && str)              set_str(&p->menu, str);
+		else if (!strcmp(key, "ItemIsMenu") && type == DBUS_TYPE_BOOLEAN) {
+			dbus_bool_t b;
+			dbus_message_iter_get_basic(&var, &b);
+			p->is_menu = b;
+		} else if (!strcmp(key, "IconPixmap")) {
+			if (p->pixmap) destroyicon(p->pixmap);
+			p->pixmap = pick_pixmap(&var);
+		} else if (!strcmp(key, "AttentionIconPixmap")) {
+			if (p->attention_pixmap) destroyicon(p->attention_pixmap);
+			p->attention_pixmap = pick_pixmap(&var);
+		}
+	}
+}
+
+static void
+props_free(Props *p)
+{
+	free(p->id); free(p->title); free(p->status);
+	free(p->icon_name); free(p->theme_path); free(p->attention_name); free(p->menu);
+	if (p->pixmap) destroyicon(p->pixmap);
+	if (p->attention_pixmap) destroyicon(p->attention_pixmap);
+}
+
+/* A themed icon if the name resolves, else the pixmap, else nothing. Takes
+ * ownership of pixmap. */
+static Icon *
+resolve_icon(const char *name, const char *theme_path, Icon *pixmap, const char **source)
+{
+	if (name && *name) {
+		ThemeBitmap *bm = themeicon_load(name, theme_path, ICON_SIZE);
+		Icon *ic = bm ? createicon_premul(bm->pix, bm->w, bm->h) : NULL;
+
+		if (ic) {
+			free(bm); /* pix now belongs to the icon */
+			if (pixmap)
+				destroyicon(pixmap);
+			*source = "theme";
+			return ic;
+		}
+		themeicon_free(bm);
+	}
+	if (pixmap) {
+		*source = "pixmap";
+		return pixmap;
+	}
+	*source = "none";
 	return NULL;
 }
 
 static int
-select_image(DBusMessageIter *iter, int target_width)
+str_eq(const char *a, const char *b)
 {
-	DBusMessageIter vals;
-	dbus_int32_t cur_width;
-	int i = 0;
+	return (!a && !b) || (a && b && !strcmp(a, b));
+}
 
-	do {
-		dbus_message_iter_recurse(iter, &vals);
-		if (dbus_message_iter_get_arg_type(&vals) != DBUS_TYPE_INT32)
-			return -1;
-		dbus_message_iter_get_basic(&vals, &cur_width);
-		if (cur_width >= target_width)
-			return i;
+static int
+pixmaps_equal(const Icon *a, const Icon *b)
+{
+	if (!a || !b)
+		return !a && !b;
+	return a->buf_orig && b->buf_orig && a->size_orig == b->size_orig
+		&& !memcmp(a->buf_orig, b->buf_orig, a->size_orig);
+}
 
-		i++;
-	} while (dbus_message_iter_next(iter));
-
-	/* return last index if desired not found */
-	return --i;
+static ItemStatus
+parse_status(const char *s)
+{
+	if (s && !strcmp(s, "Passive"))
+		return ItemPassive;
+	if (s && !strcmp(s, "NeedsAttention"))
+		return ItemAttention;
+	return ItemActive;
 }
 
 static void
-menupath_ready_handler(DBusPendingCall *pending, void *data)
+props_ready(DBusPendingCall *pending, void *data)
 {
 	Item *item = data;
+	DBusMessage *reply = dbus_pending_call_steal_reply(pending);
+	DBusMessageIter iter;
+	Props p;
+	const char *src_n = "none", *src_a = "none";
+	int same_normal;
 
-	DBusError err = DBUS_ERROR_INIT;
-	DBusMessage *reply = NULL;
-	DBusMessageIter iter, opath;
-	char *path_dup = NULL;
-	const char *path;
-
-	reply = dbus_pending_call_steal_reply(pending);
-	if (!reply)
-		goto fail;
-
-	if (dbus_set_error_from_message(&err, reply)) {
-		fprintf(stderr, "DBus Error: %s - %s: Couldn't get menupath\n",
-		        err.name, err.message);
-		goto fail;
-	}
-
-	dbus_message_iter_init(reply, &iter);
-	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_VARIANT)
-		goto fail;
-	dbus_message_iter_recurse(&iter, &opath);
-	if (dbus_message_iter_get_arg_type(&opath) != DBUS_TYPE_OBJECT_PATH)
-		goto fail;
-	dbus_message_iter_get_basic(&opath, &path);
-
-	path_dup = strdup(path);
-	if (!path_dup)
-		goto fail;
-
-	item->menu_busobj = path_dup;
-
-	dbus_message_unref(reply);
 	dbus_pending_call_unref(pending);
-	return;
+	item->pending = NULL;
+	item->refreshing = 0;
 
-fail:
-	free(path_dup);
-	dbus_error_free(&err);
-	if (reply)
-		dbus_message_unref(reply);
-	if (pending)
-		dbus_pending_call_unref(pending);
-}
-
-/*
- * Gets the Id dbus property, which is the name of the application,
- * most of the time...
- * The initial letter will be used as a fallback icon
- */
-static void
-id_ready_handler(DBusPendingCall *pending, void *data)
-{
-	Item *item = data;
-
-	DBusError err = DBUS_ERROR_INIT;
-	DBusMessage *reply = NULL;
-	DBusMessageIter iter, string;
-	Watcher *watcher;
-	char *id_dup = NULL;
-	const char *id;
-
-	watcher = item_get_watcher(item);
-
-	reply = dbus_pending_call_steal_reply(pending);
 	if (!reply)
-		goto fail;
-
-	if (dbus_set_error_from_message(&err, reply)) {
-		fprintf(stderr, "DBus Error: %s - %s: Couldn't get appid\n",
-		        err.name, err.message);
-		goto fail;
+		return;
+	if (dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR || !dbus_message_iter_init(reply, &iter)) {
+		dbus_message_unref(reply);
+		return;
 	}
+	parse_props(&p, &iter);
+	dbus_message_unref(reply);
 
-	dbus_message_iter_init(reply, &iter);
-	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_VARIANT)
-		goto fail;
-	dbus_message_iter_recurse(&iter, &string);
-	if (dbus_message_iter_get_arg_type(&string) != DBUS_TYPE_STRING)
-		goto fail;
-	dbus_message_iter_get_basic(&string, &id);
+	set_str(&item->appid, p.id);
+	set_str(&item->title, p.title);
+	item->status = parse_status(p.status);
+	item->is_menu = p.is_menu;
+	free(item->menu_busobj);
+	/* "/NO_DBUSMENU" is the sentinel Qt uses for "no menu" */
+	item->menu_busobj = p.menu && strcmp(p.menu, "/NO_DBUSMENU") && strcmp(p.menu, "/") ? strdup(p.menu) : NULL;
 
-	id_dup = strdup(id);
-	if (!id_dup)
-		goto fail;
-	item->appid = id_dup;
+	/* keep the decoded icon when nothing it depends on changed: a themed icon depends
+	 * on its name and the theme, a pixmap on its bytes */
+	same_normal = item->ready && item->theme_gen == theme_generation
+		&& str_eq(p.icon_name, item->icon_name) && str_eq(p.theme_path, item->theme_path)
+		&& ((item->icon_source && !strcmp(item->icon_source, "theme")) || pixmaps_equal(item->icon_normal, p.pixmap));
 
-	/* Don't trigger update if this item already has a real icon */
+	if (same_normal) {
+		if (p.pixmap) destroyicon(p.pixmap);
+		p.pixmap = NULL;
+	} else {
+		if (item->icon_normal) destroyicon(item->icon_normal);
+		item->icon_normal = resolve_icon(p.icon_name, p.theme_path, p.pixmap, &src_n);
+		p.pixmap = NULL;
+		item->icon_source = src_n;
+	}
+	/* the attention icon is rare, so it is simply rebuilt */
+	if (item->icon_attention) destroyicon(item->icon_attention);
+	item->icon_attention = resolve_icon(p.attention_name, p.theme_path, p.attention_pixmap, &src_a);
+	p.attention_pixmap = NULL;
+	set_str(&item->icon_name, p.icon_name);
+	set_str(&item->theme_path, p.theme_path);
+	set_str(&item->attention_name, p.attention_name);
+	item->theme_gen = theme_generation;
+
+	item->icon = item->status == ItemAttention && item->icon_attention ? item->icon_attention : item->icon_normal;
 	if (!item->icon)
-		watcher_update_trays(watcher);
+		item->icon_source = "none";
+	item->ready = 1;
+	props_free(&p);
 
-	dbus_message_unref(reply);
-	dbus_pending_call_unref(pending);
-	return;
+	if (item->refresh_again) {
+		item->refresh_again = 0;
+		item_refresh(item);
+	}
+	watcher_update_trays(item->watcher);
+}
 
-fail:
-	dbus_error_free(&err);
-	if (id_dup)
-		free(id_dup);
-	if (reply)
-		dbus_message_unref(reply);
-	if (pending)
-		dbus_pending_call_unref(pending);
+void
+item_refresh(Item *item)
+{
+	DBusConnection *conn = item_get_connection(item);
+	DBusMessage *msg;
+	const char *iface = SNI_IFACE;
+
+	if (!item->owner)
+		return; /* the owner lookup has not answered yet; it refreshes when it does */
+	if (item->refreshing) {
+		item->refresh_again = 1; /* coalesce a burst of New* signals into one more read */
+		return;
+	}
+	if (!(msg = dbus_message_new_method_call(item->busname, item->busobj, DBUS_INTERFACE_PROPERTIES, "GetAll")))
+		return;
+	if (dbus_message_append_args(msg, DBUS_TYPE_STRING, &iface, DBUS_TYPE_INVALID)
+			&& dbus_connection_send_with_reply(conn, msg, &item->pending, 5000) && item->pending) {
+		item->refreshing = 1;
+		if (!dbus_pending_call_set_notify(item->pending, props_ready, item, NULL)) {
+			dbus_pending_call_cancel(item->pending);
+			dbus_pending_call_unref(item->pending);
+			item->pending = NULL;
+			item->refreshing = 0;
+		}
+	}
+	dbus_message_unref(msg);
 }
 
 static void
-pixmap_ready_handler(DBusPendingCall *pending, void *data)
+owner_ready(DBusPendingCall *pending, void *data)
 {
 	Item *item = data;
+	DBusMessage *reply = dbus_pending_call_steal_reply(pending);
+	const char *owner = NULL;
 
-	DBusMessage *reply = NULL;
-	DBusMessageIter iter, array, select, strct;
-	Icon *icon = NULL;
-	Watcher *watcher;
-	dbus_int32_t width, height;
-	int selected_index, size;
-	const uint8_t *buf;
-
-	watcher = item_get_watcher(item);
-
-	reply = dbus_pending_call_steal_reply(pending);
-	if (!reply || dbus_message_get_type(reply) == DBUS_MESSAGE_TYPE_ERROR)
-		goto fail;
-	dbus_message_iter_init(reply, &iter);
-	if (dbus_message_iter_get_arg_type(&iter) != DBUS_TYPE_VARIANT)
-		goto fail;
-	dbus_message_iter_recurse(&iter, &array);
-	if (dbus_message_iter_get_arg_type(&array) != DBUS_TYPE_ARRAY)
-		goto fail;
-	dbus_message_iter_recurse(&array, &select);
-	if (dbus_message_iter_get_arg_type(&select) != DBUS_TYPE_STRUCT)
-		goto fail;
-	selected_index = select_image(&select, 22); // Get the 22*22 image
-	if (selected_index < 0)
-		goto fail;
-
-	dbus_message_iter_recurse(&array, &strct);
-	if (dbus_message_iter_get_arg_type(&strct) != DBUS_TYPE_STRUCT)
-		goto fail;
-	for (int i = 0; i < selected_index; i++)
-		dbus_message_iter_next(&strct);
-	buf = extract_image(&strct, &width, &height, &size);
-	if (!buf)
-		goto fail;
-
-	if (!item->icon) {
-		/* First icon */
-		icon = createicon(buf, width, height, size);
-		if (!icon)
-			goto fail;
-		item->icon = icon;
-		watcher_update_trays(watcher);
-
-	} else if (memcmp(item->icon->buf_orig, buf,
-	                  MIN(item->icon->size_orig, (size_t)size)) != 0) {
-		/* New icon */
-		destroyicon(item->icon);
-		item->icon = NULL;
-		icon = createicon(buf, width, height, size);
-		if (!icon)
-			goto fail;
-		item->icon = icon;
-		watcher_update_trays(watcher);
-
-	} else {
-		/* Icon didn't change */
-	}
-
-	dbus_message_unref(reply);
 	dbus_pending_call_unref(pending);
-	return;
-
-fail:
-	if (icon)
-		destroyicon(icon);
+	item->pending = NULL;
+	if (reply && dbus_message_get_type(reply) != DBUS_MESSAGE_TYPE_ERROR
+			&& dbus_message_get_args(reply, NULL, DBUS_TYPE_STRING, &owner, DBUS_TYPE_INVALID) && owner)
+		item->owner = strdup(owner);
 	if (reply)
 		dbus_message_unref(reply);
-	if (pending)
-		dbus_pending_call_unref(pending);
+	if (item->owner)
+		item_refresh(item);
 }
 
-static DBusHandlerResult
-handle_newicon(Item *item, DBusConnection *conn, DBusMessage *msg)
+static void
+resolve_owner(Item *item)
 {
-	const char *sender = dbus_message_get_sender(msg);
+	DBusConnection *conn = item_get_connection(item);
+	DBusMessage *msg;
+	const char *name = item->busname;
 
-	if (sender && strcmp(sender, item->busname) == 0) {
-		request_property(conn, item->busname, item->busobj,
-		                 "IconPixmap", SNI_IFACE, pixmap_ready_handler,
-		                 item);
-
-		return DBUS_HANDLER_RESULT_HANDLED;
-
-	} else {
-		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	if (item->busname[0] == ':') { /* already a unique name */
+		item->owner = strdup(item->busname);
+		item_refresh(item);
+		return;
 	}
+	if (!(msg = dbus_message_new_method_call(DBUS_SERVICE_DBUS, DBUS_PATH_DBUS, DBUS_INTERFACE_DBUS, "GetNameOwner")))
+		return;
+	if (dbus_message_append_args(msg, DBUS_TYPE_STRING, &name, DBUS_TYPE_INVALID)
+			&& dbus_connection_send_with_reply(conn, msg, &item->pending, 5000) && item->pending
+			&& !dbus_pending_call_set_notify(item->pending, owner_ready, item, NULL)) {
+		dbus_pending_call_cancel(item->pending);
+		dbus_pending_call_unref(item->pending);
+		item->pending = NULL;
+	}
+	dbus_message_unref(msg);
 }
 
 static DBusHandlerResult
 filter_bus(DBusConnection *conn, DBusMessage *msg, void *data)
 {
 	Item *item = data;
+	const char *sender;
 
-	if (dbus_message_is_signal(msg, SNI_IFACE, "NewIcon"))
-		return handle_newicon(item, conn, msg);
-	else
+	if (dbus_message_get_type(msg) != DBUS_MESSAGE_TYPE_SIGNAL
+			|| !dbus_message_has_interface(msg, SNI_IFACE))
 		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	sender = dbus_message_get_sender(msg);
+	/* the sender of a signal is always the unique name, never a well-known one */
+	if (!sender || !item->owner || strcmp(sender, item->owner))
+		return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
+	if (dbus_message_is_signal(msg, SNI_IFACE, "NewIcon")
+			|| dbus_message_is_signal(msg, SNI_IFACE, "NewAttentionIcon")
+			|| dbus_message_is_signal(msg, SNI_IFACE, "NewOverlayIcon")
+			|| dbus_message_is_signal(msg, SNI_IFACE, "NewStatus")
+			|| dbus_message_is_signal(msg, SNI_IFACE, "NewTitle")
+			|| dbus_message_is_signal(msg, SNI_IFACE, "NewToolTip")) {
+		item_refresh(item);
+		return DBUS_HANDLER_RESULT_HANDLED;
+	}
+	return DBUS_HANDLER_RESULT_NOT_YET_HANDLED;
 }
 
 Item *
 createitem(const char *busname, const char *busobj, Watcher *watcher)
 {
-	DBusConnection *conn;
-	Item *item;
-	char *busname_dup = NULL;
-	char *busobj_dup = NULL;
+	DBusConnection *conn = watcher->conn;
+	Item *item = calloc(1, sizeof(Item));
 	char match_rule[RULEBSIZE];
 
-	item = calloc(1, sizeof(Item));
-	busname_dup = strdup(busname);
-	busobj_dup = strdup(busobj);
-	if (!item || !busname_dup || !busobj_dup)
-		goto fail;
-
-	conn = watcher->conn;
-	item->busname = busname_dup;
-	item->busobj = busobj_dup;
+	if (!item)
+		return NULL;
+	item->busname = strdup(busname);
+	item->busobj = strdup(busobj);
 	item->watcher = watcher;
-
-	request_property(conn, busname, busobj, "IconPixmap", SNI_IFACE,
-	                 pixmap_ready_handler, item);
-
-	request_property(conn, busname, busobj, "Id", SNI_IFACE,
-	                 id_ready_handler, item);
-
-	request_property(conn, busname, busobj, "Menu", SNI_IFACE,
-	                 menupath_ready_handler, item);
-
-	if (snprintf(match_rule, sizeof(match_rule), match_string, busname) >=
-	    RULEBSIZE) {
-		goto fail;
+	item->status = ItemActive;
+	item->icon_source = "none";
+	if (!item->busname || !item->busobj
+			|| snprintf(match_rule, sizeof match_rule, match_string, busname) >= RULEBSIZE
+			|| !dbus_connection_add_filter(conn, filter_bus, item, NULL)) {
+		free(item->busname);
+		free(item->busobj);
+		free(item);
+		return NULL;
 	}
-
-	if (!dbus_connection_add_filter(conn, filter_bus, item, NULL))
-		goto fail;
 	dbus_bus_add_match(conn, match_rule, NULL);
-
+	resolve_owner(item);
 	return item;
-
-fail:
-	free(busname_dup);
-	free(busobj_dup);
-	return NULL;
 }
 
 void
 destroyitem(Item *item)
 {
-	DBusConnection *conn;
+	DBusConnection *conn = item_get_connection(item);
 	char match_rule[RULEBSIZE];
 
-	conn = item_get_connection(item);
-
-	if (snprintf(match_rule, sizeof(match_rule), match_string,
-	             item->busname) < RULEBSIZE) {
+	if (item->pending) { /* its notify callback would get a freed item */
+		dbus_pending_call_cancel(item->pending);
+		dbus_pending_call_unref(item->pending);
+	}
+	if (snprintf(match_rule, sizeof match_rule, match_string, item->busname) < RULEBSIZE) {
 		dbus_bus_remove_match(conn, match_rule, NULL);
 		dbus_connection_remove_filter(conn, filter_bus, item);
 	}
-	if (item->icon)
-		destroyicon(item->icon);
+	if (item->icon_normal)
+		destroyicon(item->icon_normal);
+	if (item->icon_attention)
+		destroyicon(item->icon_attention);
 	free(item->menu_busobj);
 	free(item->busname);
 	free(item->busobj);
+	free(item->owner);
 	free(item->appid);
+	free(item->title);
+	free(item->icon_name);
+	free(item->theme_path);
+	free(item->attention_name);
 	free(item);
 }
 
-void
-item_activate(Item *item)
+int
+item_visible(const Item *item)
 {
-	DBusConnection *conn;
-	DBusMessage *msg = NULL;
-	dbus_int32_t x = 0, y = 0;
+	return item->status != ItemPassive;
+}
 
-	conn = item_get_connection(item);
+int
+item_has_menu(const Item *item)
+{
+	return item->menu_busobj != NULL;
+}
 
-	if (!(msg = dbus_message_new_method_call(item->busname, item->busobj,
-	                                         SNI_IFACE, "Activate")) ||
-	    !dbus_message_append_args(msg, DBUS_TYPE_INT32, &x, DBUS_TYPE_INT32,
-	                              &y, DBUS_TYPE_INVALID) ||
-	    !dbus_connection_send_with_reply(conn, msg, NULL, -1)) {
-		goto fail;
-	}
+/* ---- calling the item ---- */
 
+static void
+call_item(Item *item, const char *method, int type1, const void *a1, int type2, const void *a2)
+{
+	DBusConnection *conn = item_get_connection(item);
+	DBusMessage *msg = dbus_message_new_method_call(item->busname, item->busobj, SNI_IFACE, method);
+
+	if (!msg)
+		return;
+	if (dbus_message_append_args(msg, type1, a1, type2, a2, DBUS_TYPE_INVALID))
+		dbus_connection_send(conn, msg, NULL); /* fire and forget */
 	dbus_message_unref(msg);
-	return;
+}
 
-fail:
-	if (msg)
-		dbus_message_unref(msg);
+void
+item_activate(Item *item, int x, int y)
+{
+	dbus_int32_t px = x, py = y;
+	call_item(item, "Activate", DBUS_TYPE_INT32, &px, DBUS_TYPE_INT32, &py);
+}
+
+void
+item_secondary_activate(Item *item, int x, int y)
+{
+	dbus_int32_t px = x, py = y;
+	call_item(item, "SecondaryActivate", DBUS_TYPE_INT32, &px, DBUS_TYPE_INT32, &py);
+}
+
+void
+item_context_menu(Item *item, int x, int y)
+{
+	dbus_int32_t px = x, py = y;
+	call_item(item, "ContextMenu", DBUS_TYPE_INT32, &px, DBUS_TYPE_INT32, &py);
+}
+
+void
+item_scroll(Item *item, int delta, int horizontal)
+{
+	dbus_int32_t d = delta;
+	const char *orient = horizontal ? "horizontal" : "vertical";
+	call_item(item, "Scroll", DBUS_TYPE_INT32, &d, DBUS_TYPE_STRING, &orient);
 }

@@ -29,6 +29,33 @@ tray_get_watcher(const Tray *tray)
 	return tray->watcher;
 }
 
+/* the idx-th item that is shown (Passive ones are not) */
+static Item *
+nth_visible(Watcher *watcher, unsigned idx)
+{
+	Item *item;
+	unsigned n = 0;
+
+	wl_list_for_each(item, &watcher->items, link) {
+		if (!item_visible(item))
+			continue;
+		if (n++ == idx)
+			return item;
+	}
+	return NULL;
+}
+
+static int
+count_visible(Watcher *watcher)
+{
+	Item *item;
+	int n = 0;
+
+	wl_list_for_each(item, &watcher->items, link)
+		n += item_visible(item);
+	return n;
+}
+
 static pixman_image_t *
 createcanvas(int width, int height, int bgcolor)
 {
@@ -55,7 +82,7 @@ tray_update(Tray *tray)
 	pixman_image_t *canvas = NULL, *img;
 
 	watcher = tray_get_watcher(tray);
-	n_items = watcher_get_n_items(watcher);
+	n_items = count_visible(watcher);
 
 	if (!n_items) {
 		if (tray->image) {
@@ -83,6 +110,9 @@ tray_update(Tray *tray)
 		int slot_y_start = 0;
 		int slot_y_end = canvas_height;
 		int slot_y_width = slot_y_end - slot_y_start;
+
+		if (!item_visible(item))
+			continue;
 
 		if (item->icon) {
 			/* Real icon */
@@ -199,39 +229,55 @@ tray_get_icon_width(const Tray *tray)
 	return tray->height;
 }
 
-void
-tray_rightclicked(Tray *tray, unsigned int index, const char **menucmd)
+/* x is relative to the left edge of the tray; returns the index among shown items, or -1 */
+int
+tray_index_at(const Tray *tray, int x)
 {
-	Item *item;
-	Watcher *watcher;
-	unsigned int count = 0;
+	int n, slot;
 
-	watcher = tray_get_watcher(tray);
+	if (!tray || !tray->image || x < 0)
+		return -1;
+	n = count_visible(tray->watcher);
+	slot = tray->height + tray->spacing;
+	if (!n || slot <= 0)
+		return -1;
+	x -= tray->spacing / 2;
+	return x < 0 ? 0 : x / slot >= n ? n - 1 : x / slot;
+}
 
-	wl_list_for_each(item, &watcher->items, link) {
-		if (count == index) {
-			menu_show(watcher->conn, watcher->loop, item->busname,
-			          item->menu_busobj, menucmd);
-			return;
-		}
-		count++;
+void
+tray_click(Tray *tray, unsigned int index, int button, int x, int y, const char **menucmd)
+{
+	Watcher *watcher = tray_get_watcher(tray);
+	Item *item = nth_visible(watcher, index);
+
+	if (!item)
+		return;
+	switch (button) {
+	case TrayLeft:
+		/* menu-only items (ItemIsMenu) have nothing to activate */
+		if (item->is_menu && item_has_menu(item))
+			menu_show(watcher->conn, watcher->loop, item->busname, item->menu_busobj, menucmd);
+		else
+			item_activate(item, x, y);
+		break;
+	case TrayMiddle:
+		item_secondary_activate(item, x, y);
+		break;
+	case TrayRight:
+		if (item_has_menu(item))
+			menu_show(watcher->conn, watcher->loop, item->busname, item->menu_busobj, menucmd);
+		else
+			item_context_menu(item, x, y);
+		break;
 	}
 }
 
 void
-tray_leftclicked(Tray *tray, unsigned int index)
+tray_scroll(Tray *tray, unsigned int index, int delta, int horizontal)
 {
-	Item *item;
-	Watcher *watcher;
-	unsigned int count = 0;
+	Item *item = nth_visible(tray_get_watcher(tray), index);
 
-	watcher = tray_get_watcher(tray);
-
-	wl_list_for_each(item, &watcher->items, link) {
-		if (count == index) {
-			item_activate(item);
-			return;
-		}
-		count++;
-	}
+	if (item)
+		item_scroll(item, delta, horizontal);
 }

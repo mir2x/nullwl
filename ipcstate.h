@@ -9,6 +9,8 @@
  * dozens of things) therefore costs one pass, and a place that forgets to call
  * ipc_changed() can only delay an event, never produce a wrong one.
  */
+#include <cairo.h>
+
 #include "ipc.h"
 #include "systray/item.h"
 
@@ -466,6 +468,12 @@ cmdget(IpcClient *cl, const IpcReq *req)
 			jstr(&b, "bus_name", it->busname);
 			jstr(&b, "object", it->busobj);
 			jstr(&b, "app_id", it->appid);
+			jstr(&b, "title", it->title);
+			jstr(&b, "status", it->status == ItemPassive ? "passive" : it->status == ItemAttention ? "attention" : "active");
+			jstr(&b, "icon_name", it->icon_name);
+			jstr(&b, "icon_source", it->icon_source); /* theme, pixmap, or none (a letter is drawn) */
+			jbool(&b, "has_menu", item_has_menu(it));
+			jbool(&b, "menu_only", it->is_menu);
 			jbool(&b, "ready", it->ready);
 			jb_printf(&b, "}");
 		}
@@ -606,6 +614,34 @@ cmdfocus(IpcClient *cl, const IpcReq *req, int close)
 	ipc_reply_ok(cl, NULL);
 }
 
+/* Debugging aid: write what the tray currently looks like to a PNG. */
+static void
+cmddumptray(IpcClient *cl, const IpcReq *req)
+{
+	const char *path = ipc_req_get(req, "path");
+	Tray *t = selmon ? selmon->tray : NULL;
+	cairo_surface_t *s;
+	int w, h;
+
+	if (!path || !*path) {
+		ipc_reply_err(cl, "dump-tray: needs a 'path'");
+		return;
+	}
+	if (!t || !t->image) {
+		ipc_reply_err(cl, "dump-tray: the tray is empty");
+		return;
+	}
+	w = pixman_image_get_width(t->image);
+	h = pixman_image_get_height(t->image);
+	s = cairo_image_surface_create_for_data((unsigned char *)pixman_image_get_data(t->image),
+			CAIRO_FORMAT_ARGB32, w, h, pixman_image_get_stride(t->image));
+	if (cairo_surface_write_to_png(s, path) != CAIRO_STATUS_SUCCESS)
+		ipc_reply_err(cl, "dump-tray: cannot write %s", path);
+	else
+		ipc_reply_ok(cl, NULL);
+	cairo_surface_destroy(s);
+}
+
 static void
 ipchandler(IpcClient *cl, const IpcReq *req, void *data)
 {
@@ -629,6 +665,8 @@ ipchandler(IpcClient *cl, const IpcReq *req, void *data)
 		cmddispatch(cl, req);
 	} else if (!strcmp(cmd, "set")) {
 		cmdset(cl, req);
+	} else if (!strcmp(cmd, "dump-tray")) {
+		cmddumptray(cl, req);
 	} else if (!strcmp(cmd, "focus")) {
 		cmdfocus(cl, req, 0);
 	} else if (!strcmp(cmd, "close")) {

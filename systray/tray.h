@@ -31,7 +31,10 @@ void destroytray (Tray *tray);
 int tray_get_width (const Tray *tray);
 int tray_get_icon_width (const Tray *tray);
 void tray_update (Tray *tray);
-void tray_leftclicked (Tray *tray, unsigned int index);
-void tray_rightclicked (Tray *tray, unsigned int index, const char **menucmd);
+enum { TrayLeft, TrayMiddle, TrayRight };
+int tray_index_at (const Tray *tray, int x);
+void tray_click (Tray *tray, unsigned int index, int button, int x, int y,
+                 const char **menucmd);
+void tray_scroll (Tray *tray, unsigned int index, int delta, int horizontal);
 
 #endif /* TRAY_H */

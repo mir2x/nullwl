@@ -124,6 +124,7 @@ static const Option options[] = {
 	{ "showbar",                  OptBool,   &showbar,                  FxRestart, 0, 1, NULL },
 	{ "topbar",                   OptBool,   &topbar,                   FxRestart, 0, 1, NULL },
 	{ "showsystray",              OptBool,   &showsystray,              FxRestart, 0, 1, NULL },
+	{ "icon_theme",               OptStr,    &icon_theme,               FxNone,    0, 0, NULL },
 	{ "systray_spacing",          OptUInt,   &systrayspacing,           FxRestart, 0, 100, NULL },
 	{ "cursor_size",              OptUInt,   &cursor_size,              FxRestart, 1, 512, NULL },
 	/* keyboard and pointer */
@@ -244,7 +245,7 @@ setoption(const Option *o, char *val, const ConfPos *pos, int reload)
 /* ------------------------------------------------------------------ */
 /* actions                                                             */
 /* ------------------------------------------------------------------ */
-enum { ArgNone, ArgInt, ArgUInt, ArgFloat, ArgTag, ArgShell, ArgLayout, ArgDir, ArgCursor };
+enum { ArgNone, ArgInt, ArgUInt, ArgIndex, ArgFloat, ArgTag, ArgShell, ArgLayout, ArgDir, ArgCursor };
 
 typedef struct {
 	const char *name;
@@ -290,8 +291,9 @@ static const ActionDef actions[] = {
 	/* mouse / bar actions */
 	{ "togglewin",         togglewin,         ArgNone },
 	{ "moveresize",        moveresize,        ArgCursor },
-	{ "trayactivate",      trayactivate,      ArgNone },
-	{ "traymenu",          traymenu,          ArgNone },
+	{ "trayactivate",      trayactivate,      ArgIndex },
+	{ "traysecondary",     traysecondary,     ArgIndex },
+	{ "traymenu",          traymenu,          ArgIndex },
 };
 
 static const EnumName en_dir[] = {
@@ -332,6 +334,12 @@ parseargument(const ActionDef *a, char *s, Arg *arg, const ConfPos *pos)
 		return 0;
 	case ArgUInt:
 		if (conf_parse_long(s, 0, 1000000, &l)) { conf_error(pos, "%s: expected a positive integer, got '%s'", a->name, s); return -1; }
+		arg->ui = (uint32_t)l;
+		return 0;
+	case ArgIndex: /* optional: the bar fills it in when clicked */
+		if (!*s)
+			return 0;
+		if (conf_parse_long(s, 0, 1000000, &l)) { conf_error(pos, "%s: expected an item number, got '%s'", a->name, s); return -1; }
 		arg->ui = (uint32_t)l;
 		return 0;
 	case ArgFloat:
@@ -727,8 +735,13 @@ applyconfig(void)
 	Monitor *m;
 	Client *c, *sel;
 	PointerDev *pd;
+	Item *it;
 
 	wlr_log_init(log_level, NULL);
+	themeicon_set_theme(icon_theme);
+	item_theme_changed();
+	wl_list_for_each(it, &watcher.items, link)
+		item_refresh(it);
 	wlr_scene_rect_set_color(root_bg, rootcolor);
 	if (kb_group)
 		wlr_keyboard_set_repeat_info(&kb_group->wlr_group->keyboard, repeat_rate, repeat_delay);

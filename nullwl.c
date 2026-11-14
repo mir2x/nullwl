@@ -78,6 +78,8 @@
 #include "util.h"
 #include "drwl.h"
 #include "dbus.h"
+#include "systray/item.h"
+#include "systray/themeicon.h"
 #include "systray/tray.h"
 #include "systray/watcher.h"
 
@@ -432,6 +434,7 @@ static void toggletag(const Arg *arg);
 static void toggleview(const Arg *arg);
 static void trayactivate(const Arg *arg);
 static void traymenu(const Arg *arg);
+static void traysecondary(const Arg *arg);
 static void traynotify(void *data);
 static void togglewin(const Arg *arg);
 static void unlocksession(struct wl_listener *listener, void *data);
@@ -807,7 +810,29 @@ axisnotify(struct wl_listener *listener, void *data)
 	/* This event is forwarded by the cursor when a pointer emits an axis event,
 	 * for example when you move the scroll wheel. */
 	struct wlr_pointer_axis_event *event = data;
+	struct wlr_scene_node *node;
+	struct wlr_scene_buffer *buffer;
+	Monitor *m;
+	Client *under = NULL;
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
+
+	/* Scrolling over a tray icon goes to that icon's application, not to a window */
+	xytonode(cursor->x, cursor->y, NULL, &under, NULL, NULL, NULL);
+	if (!under && !locked && !exclusive_focus && (m = xytomon(cursor->x, cursor->y)) && m->tray
+			&& (node = wlr_scene_node_at(&layers[LyrBottom]->node, cursor->x, cursor->y, NULL, NULL))
+			&& (buffer = wlr_scene_buffer_from_node(node)) && buffer == m->scene_buffer) {
+		int tw = tray_get_width(m->tray);
+		int cx = (int)((cursor->x - m->m.x) * m->wlr_output->scale);
+		if (tw > 0 && cx > m->b.width - tw) {
+			int idx = tray_index_at(m->tray, cx - (m->b.width - tw));
+			if (idx >= 0 && event->delta) {
+				/* SNI: positive is up/away, the opposite of wayland's down-is-positive */
+				tray_scroll(m->tray, (unsigned int)idx, event->delta > 0 ? -120 : 120,
+						event->orientation == WL_POINTER_AXIS_HORIZONTAL_SCROLL);
+				return;
+			}
+		}
+	}
 	/* TODO: allow usage of scroll wheel for mousebindings, it can be implemented
 	 * by checking the event's orientation and the delta of the event */
 	/* Notify the client with pointer focus of the axis event. */
@@ -893,8 +918,8 @@ bufrelease(struct wl_listener *listener, void *data)
 void
 buttonpress(struct wl_listener *listener, void *data)
 {
-	unsigned int i = 0, x = 0, occ = 0, ti = 0;
-	double cx, tx = 0;
+	unsigned int i = 0, x = 0, occ = 0;
+	double cx;
 	unsigned int click;
 	struct wlr_pointer_button_event *event = data;
 	struct wlr_keyboard *keyboard;
@@ -941,13 +966,8 @@ buttonpress(struct wl_listener *listener, void *data)
 			} else if (cx < x + TEXTW(selmon, selmon->ltsymbol))
 				click = ClkLtSymbol;
 			else if (traywidth > 0 && cx > selmon->b.width - traywidth) {
-				unsigned int tray_n_items = watcher_get_n_items(&watcher);
-				tx = selmon->b.width - traywidth;
-				do
-					tx += tray_n_items ? (int)(traywidth / tray_n_items) : 0;
-				while (cx >= tx && ++ti < tray_n_items);
 				click = ClkTray;
-				arg.ui = ti;
+				arg.ui = (unsigned int)tray_index_at(selmon->tray, (int)cx - (selmon->b.width - traywidth));
 			} else if (cx > selmon->b.width - traywidth - statuswidth(selmon)) {
 				click = ClkStatus;
 			} else {
@@ -1983,13 +2003,19 @@ traynotify(void *data)
 void
 trayactivate(const Arg *arg)
 {
-	tray_leftclicked(selmon->tray, arg->ui);
+	tray_click(selmon->tray, arg->ui, TrayLeft, (int)cursor->x, (int)cursor->y, dmenucmd);
+}
+
+void
+traysecondary(const Arg *arg)
+{
+	tray_click(selmon->tray, arg->ui, TrayMiddle, (int)cursor->x, (int)cursor->y, dmenucmd);
 }
 
 void
 traymenu(const Arg *arg)
 {
-	tray_rightclicked(selmon->tray, arg->ui, dmenucmd);
+	tray_click(selmon->tray, arg->ui, TrayRight, (int)cursor->x, (int)cursor->y, dmenucmd);
 }
 
 /* Walks stext the way it is drawn, honouring ^fg(rrggbb) ^bg(rrggbb) and ^fg() ^bg() to

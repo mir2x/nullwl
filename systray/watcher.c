@@ -145,6 +145,7 @@ respond_register_item(Watcher *watcher, DBusConnection *conn, DBusMessage *msg)
 	DBusMessage *reply = NULL;
 	Item *item;
 	const char *sender, *param, *busobj, *registree_name;
+	char namebuf[256];
 
 	if (!(sender = dbus_message_get_sender(msg)) ||
 	    !dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &param,
@@ -154,29 +155,36 @@ respond_register_item(Watcher *watcher, DBusConnection *conn, DBusMessage *msg)
 		goto send;
 	}
 
-	switch (*param) {
-	case '/':
+	/*
+	 * The argument is an object path ("/StatusNotifierItem": the item is the
+	 * sender), or a bus name that may be unique (":1.23") or well-known
+	 * ("org.kde.StatusNotifierItem-1234-1", what Qt and KDE send), optionally
+	 * followed by an object path ("name/object/path").
+	 */
+	if (*param == '/') {
 		registree_name = sender;
 		busobj = param;
-		break;
-	case ':':
-		registree_name = param;
-		busobj = SNI_OPATH;
-		break;
-	default:
-		reply = dbus_message_new_error_printf(msg,
-		                                      DBUS_ERROR_INVALID_ARGS,
-		                                      "Bad argument: \"%s\"",
-		                                      param);
-		goto send;
+	} else {
+		const char *slash = strchr(param, '/');
+		size_t n = slash ? (size_t)(slash - param) : strlen(param);
+
+		if (n == 0 || n >= sizeof namebuf) {
+			reply = dbus_message_new_error_printf(msg, DBUS_ERROR_INVALID_ARGS,
+			                                      "Bad argument: \"%s\"", param);
+			goto send;
+		}
+		memcpy(namebuf, param, n);
+		namebuf[n] = '\0';
+		registree_name = namebuf;
+		busobj = slash ? slash : SNI_OPATH;
 	}
 
-	if (*registree_name != ':' ||
-	    !dbus_validate_bus_name(registree_name, NULL)) {
+	if (!dbus_validate_bus_name(registree_name, NULL) ||
+	    !dbus_validate_path(busobj, NULL)) {
 		reply = dbus_message_new_error_printf(msg,
 		                                      DBUS_ERROR_INVALID_ARGS,
-		                                      "Invalid busname %s",
-		                                      registree_name);
+		                                      "Invalid busname or path %s",
+		                                      param);
 		goto send;
 	}
 
@@ -188,7 +196,10 @@ respond_register_item(Watcher *watcher, DBusConnection *conn, DBusMessage *msg)
 		goto send;
 	}
 
-	item = createitem(registree_name, busobj, watcher);
+	if (!(item = createitem(registree_name, busobj, watcher))) {
+		reply = dbus_message_new_error(msg, DBUS_ERROR_NO_MEMORY, "Out of memory");
+		goto send;
+	}
 	wl_list_insert(&watcher->items, &item->link);
 	watcher_update_trays(watcher);
 

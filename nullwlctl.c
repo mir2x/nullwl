@@ -33,6 +33,7 @@ usage(void)
 	      "  dispatch ACTION [ARG...]    (or: nullwlctl ACTION [ARG...])\n"
 	      "  set OPTION VALUE\n"
 	      "  focus ID | close ID\n"
+	      "  dump-tray FILE.png          (debugging: render the tray to a file)\n"
 	      "  subscribe [EVENT...]\n"
 	      "  raw JSON\n", stderr);
 	exit(2);
@@ -130,6 +131,12 @@ build_request(int argc, char **argv)
 		append_raw(&b, &len, &cap, ",\"value\":");
 		append_str(&b, &len, &cap, joined);
 		free(joined);
+	} else if (!strcmp(cmd, "dump-tray")) {
+		if (argc != 2)
+			usage();
+		append_str(&b, &len, &cap, "dump-tray");
+		append_raw(&b, &len, &cap, ",\"path\":");
+		append_str(&b, &len, &cap, argv[1]);
 	} else if (!strcmp(cmd, "focus") || !strcmp(cmd, "close")) {
 		if (argc != 2)
 			usage();
