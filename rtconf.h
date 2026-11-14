@@ -126,6 +126,7 @@ static const Option options[] = {
 	{ "showbar",                  OptBool,   &showbar,                  FxRestart, 0, 1, NULL },
 	{ "topbar",                   OptBool,   &topbar,                   FxRestart, 0, 1, NULL },
 	{ "showsystray",              OptBool,   &showsystray,              FxRestart, 0, 1, NULL },
+	{ "status_cmd",               OptStr,    &status_cmd,               FxRestart, 0, 0, NULL },
 	{ "icon_theme",               OptStr,    &icon_theme,               FxNone,    0, 0, NULL },
 	{ "systray_spacing",          OptUInt,   &systrayspacing,           FxRestart, 0, 100, NULL },
 	{ "cursor_size",              OptUInt,   &cursor_size,              FxRestart, 1, 512, NULL },

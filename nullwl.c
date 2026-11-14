@@ -418,6 +418,7 @@ static void showall(const Arg *arg);
 static void spawn(const Arg *arg);
 static void startdrag(struct wl_listener *listener, void *data);
 static int statusin(int fd, unsigned int mask, void *data);
+static int startstatus(void);
 static void swallow(Client *c, Client *toswallow);
 static void tag(const Arg *arg);
 static void tagmon(const Arg *arg);
@@ -454,6 +455,7 @@ static void zoom(const Arg *arg);
 
 /* variables */
 static pid_t child_pid = -1;
+static pid_t status_pid = -1; /* the status_cmd process group */
 static int locked;
 static void *exclusive_focus;
 static struct wl_display *dpy;
@@ -1081,6 +1083,8 @@ stopchildren(void)
 			kill(autostart_pids[i], SIGTERM);
 	if (child_pid > 0)
 		kill(-child_pid, SIGTERM);
+	if (status_pid > 0)
+		kill(-status_pid, SIGTERM);
 
 	for (n = 0; n < 100; n++) {
 		alive = 0;
@@ -1094,6 +1098,10 @@ stopchildren(void)
 			alive = 1;
 		else
 			child_pid = 0;
+		if (status_pid > 0 && waitpid(status_pid, NULL, WNOHANG) == 0)
+			alive = 1;
+		else
+			status_pid = 0;
 		if (!alive)
 			return;
 		nanosleep(&ts, NULL);
@@ -1110,6 +1118,11 @@ stopchildren(void)
 		fprintf(stderr, "nullwl: startup command pid %d ignored SIGTERM, killing\n", child_pid);
 		kill(-child_pid, SIGKILL);
 		waitpid(child_pid, NULL, WNOHANG);
+	}
+	if (status_pid > 0) {
+		fprintf(stderr, "nullwl: status command pid %d ignored SIGTERM, killing\n", status_pid);
+		kill(-status_pid, SIGKILL);
+		waitpid(status_pid, NULL, WNOHANG);
 	}
 }
 
@@ -2384,6 +2397,8 @@ handlesig(int signo)
 		while ((pid = waitpid(-1, NULL, WNOHANG)) > 0) {
 			if (pid == child_pid)
 				child_pid = -1;
+			if (pid == status_pid)
+				status_pid = -1;
 			if (!(p = autostart_pids))
 				continue;
 			lim = &p[autostart_len];
@@ -3646,7 +3661,7 @@ setup(void)
 	drwl_init();
 
 	status_event_source = wl_event_loop_add_fd(wl_display_get_event_loop(dpy),
-		STDIN_FILENO, WL_EVENT_READABLE, statusin, NULL);
+		startstatus(), WL_EVENT_READABLE, statusin, NULL);
 
 	bus_conn = dbus_bus_get(DBUS_BUS_SESSION, NULL);
 	if (!bus_conn)
@@ -3737,25 +3752,74 @@ startdrag(struct wl_listener *listener, void *data)
 	LISTEN_STATIC(&drag->icon->events.destroy, destroydragicon);
 }
 
+/* Runs status_cmd (if configured) with its stdout on a pipe, and returns the
+ * fd to read status lines from: that pipe, or stdin when there is no command. */
+int
+startstatus(void)
+{
+	int p[2];
+
+	if (!status_cmd || !*status_cmd)
+		return STDIN_FILENO;
+	if (pipe(p) < 0) {
+		fprintf(stderr, "nullwl: status_cmd: pipe: %s\n", strerror(errno));
+		return STDIN_FILENO;
+	}
+	fcntl(p[0], F_SETFD, FD_CLOEXEC);
+	fcntl(p[1], F_SETFD, FD_CLOEXEC);
+	fcntl(p[0], F_SETFL, fcntl(p[0], F_GETFL) | O_NONBLOCK);
+	if ((status_pid = fork()) < 0) {
+		fprintf(stderr, "nullwl: status_cmd: fork: %s\n", strerror(errno));
+		close(p[0]);
+		close(p[1]);
+		return STDIN_FILENO;
+	}
+	if (status_pid == 0) {
+		int nul = open("/dev/null", O_RDONLY);
+
+		setsid();
+		if (nul >= 0)
+			dup2(nul, STDIN_FILENO);
+		dup2(p[1], STDOUT_FILENO); /* dup2 drops O_CLOEXEC on the copy */
+		execl("/bin/sh", "/bin/sh", "-c", status_cmd, NULL);
+		_exit(127);
+	}
+	close(p[1]);
+	return p[0];
+}
+
 int
 statusin(int fd, unsigned int mask, void *data)
 {
-	char status[sizeof(stext)];
+	char status[sizeof(stext)], *line, *end;
 	ssize_t n;
 
-	if (mask & WL_EVENT_ERROR)
-		die("status in event error");
-	if (mask & WL_EVENT_HANGUP)
+	if (mask & WL_EVENT_ERROR) { /* the status program is gone; the bar keeps its last text */
 		wl_event_source_remove(status_event_source);
+		status_event_source = NULL;
+		return 0;
+	}
 
 	n = read(fd, status, sizeof(status) - 1);
-	if (n < 0 && errno != EWOULDBLOCK)
+	if (n < 0 && errno != EWOULDBLOCK && errno != EAGAIN)
 		die("read:");
-
+	if (n <= 0) {
+		if (n == 0 || (mask & WL_EVENT_HANGUP)) { /* the status program ended */
+			wl_event_source_remove(status_event_source);
+			status_event_source = NULL;
+		}
+		return 0;
+	}
 	status[n] = '\0';
-	status[strcspn(status, "\n")] = '\0';
+	/* several lines may have piled up: show the newest complete one */
+	end = status + strcspn(status, "\0");
+	while (end > status && (end[-1] == '\n' || end[-1] == '\r'))
+		*--end = '\0';
+	line = strrchr(status, '\n');
+	line = line ? line + 1 : status;
 
-	strncpy(stext, status, sizeof(stext));
+	strncpy(stext, line, sizeof(stext) - 1);
+	stext[sizeof(stext) - 1] = '\0';
 	drawbars();
 
 	return 0;

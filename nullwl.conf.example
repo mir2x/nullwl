@@ -28,6 +28,11 @@ color.urg.fg      = #ffffffff
 color.urg.bg      = #ff453aff
 color.urg.border  = #ff453aff
 
+# Bar status text on the right: a command that prints one line per update
+# (the newest line is shown). Colours: ^fg(rrggbb) ^bg(rrggbb), ^fg() ^bg() to reset.
+# Without it the bar reads stdin, as dwl does. Takes effect at startup.
+# status_cmd = my-status-script
+
 # Icon theme for the tray (default: the GTK setting gtk-icon-theme-name)
 # icon_theme = Papirus-Dark
 

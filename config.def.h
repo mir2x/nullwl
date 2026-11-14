@@ -24,6 +24,7 @@ static unsigned int borderpx            = 1;  /* border pixel of windows */
 static unsigned int systrayspacing      = 2;  /* systray spacing */
 static int showsystray                  = 1;  /* 0 means no systray */
 static char *icon_theme                 = NULL; /* tray icon theme; NULL = the GTK setting */
+static char *status_cmd                 = NULL; /* program whose output lines are shown as the bar status; NULL = read stdin */
 static unsigned int gappih              = 10; /* horiz inner gap between windows */
 static unsigned int gappiv              = 10; /* vert inner gap between windows */
 static unsigned int gappoh              = 10; /* horiz outer gap between windows and screen edge */
