@@ -1,0 +1,5 @@
+[Desktop Entry]
+Name=nullwl
+Comment=Wayland compositor (fork of dwl)
+Exec=nullwl
+Type=Application

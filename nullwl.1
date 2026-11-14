@@ -1,9 +1,9 @@
 .Dd January 8, 2021
-.Dt DWL 1
+.Dt NULLWL 1
 .Os
 .Sh NAME
-.Nm dwl
-.Nd dwm for Wayland
+.Nm nullwl
+.Nd Wayland compositor, a fork of dwl
 .Sh SYNOPSIS
 .Nm
 .Op Fl v
@@ -189,7 +189,7 @@ Prints the symbol of the current layout.
 .Ss Examples
 When there is a selected window:
 .Bd -literal -offset indent
-HDMI\-A\-1 title \(ti/source/repos/dwl > man \-l dwl.1
+HDMI\-A\-1 title \(ti/source/repos/nullwl > man \-l nullwl.1
 HDMI\-A\-1 appid footclient
 HDMI\-A\-1 fullscreen 0
 HDMI\-A\-1 floating 0
@@ -248,7 +248,18 @@ server.
 Start
 .Nm
 with s6 in the background:
-.Dl dwl \-s \(aqs6\-svscan <&\-\(aq
+.Dl nullwl \-s \(aqs6\-svscan <&\-\(aq
+.Sh ORIGIN
+.Nm
+is a hard fork of
+.Nm dwl ,
+based on upstream commit 49ca434 (v0.8-12, wlroots 0.20), and no longer tracks upstream.
+.Nm dwl
+is a Wayland compositor by the dwl contributors, https://codeberg.org/dwl/dwl,
+which is itself derived from
+.Xr dwm 1 ,
+sway and tinywl.
+See the README and the LICENSE files for the full credits.
 .Sh SEE ALSO
 .Xr dwm 1 ,
 .Xr foot 1 ,

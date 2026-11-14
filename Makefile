@@ -4,25 +4,25 @@
 include config.mk
 
 # flags for compiling
-DWLCPPFLAGS = -I. -DWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L \
+NWLCPPFLAGS = -I. -NWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L \
 	-DVERSION=\"$(VERSION)\" $(XWAYLAND)
-DWLDEVCFLAGS = -g -Wpedantic -Wall -Wextra -Wdeclaration-after-statement \
+NWLDEVCFLAGS = -g -Wpedantic -Wall -Wextra -Wdeclaration-after-statement \
 	-Wno-unused-parameter -Wshadow -Wunused-macros -Werror=strict-prototypes \
 	-Werror=implicit -Werror=return-type -Werror=incompatible-pointer-types \
 	-Wfloat-conversion
 
 # CFLAGS / LDFLAGS
 PKGS      = wayland-server xkbcommon libinput pixman-1 fcft dbus-1 $(XLIBS)
-DWLCFLAGS = `$(PKG_CONFIG) --cflags $(PKGS)` $(WLR_INCS) $(DWLCPPFLAGS) $(DWLDEVCFLAGS) $(CFLAGS)
+NWLCFLAGS = `$(PKG_CONFIG) --cflags $(PKGS)` $(WLR_INCS) $(NWLCPPFLAGS) $(NWLDEVCFLAGS) $(CFLAGS)
 LDLIBS    = `$(PKG_CONFIG) --libs $(PKGS)` $(WLR_LIBS) -lm $(LIBS)
 
 TRAYOBJS = systray/watcher.o systray/tray.o systray/item.o systray/icon.o systray/menu.o systray/helpers.o
 TRAYDEPS = systray/watcher.h systray/tray.h systray/item.h systray/icon.h systray/menu.h systray/helpers.h
 
-all: dwl
-dwl: dwl.o util.o dbus.o $(TRAYOBJS) $(TRAYDEPS)
-	$(CC) dwl.o util.o dbus.o $(TRAYOBJS) $(DWLCFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
-dwl.o: dwl.c client.h ime.h dbus.h config.h config.mk cursor-shape-v1-protocol.h \
+all: nullwl
+nullwl: nullwl.o util.o dbus.o $(TRAYOBJS) $(TRAYDEPS)
+	$(CC) nullwl.o util.o dbus.o $(TRAYOBJS) $(NWLCFLAGS) $(LDFLAGS) $(LDLIBS) -o $@
+nullwl.o: nullwl.c client.h ime.h dbus.h config.h config.mk cursor-shape-v1-protocol.h \
 	pointer-constraints-unstable-v1-protocol.h wlr-layer-shell-unstable-v1-protocol.h \
 	wlr-output-power-management-unstable-v1-protocol.h xdg-shell-protocol.h \
 	simple_scratchpad.h $(TRAYDEPS)
@@ -60,31 +60,31 @@ xdg-shell-protocol.h:
 config.h:
 	cp config.def.h $@
 clean:
-	rm -f dwl *.o *-protocol.h systray/*.o
+	rm -f nullwl *.o *-protocol.h systray/*.o
 
 dist: clean
-	mkdir -p dwl-$(VERSION)
+	mkdir -p nullwl-$(VERSION)
 	cp -R LICENSE* Makefile CHANGELOG.md README.md client.h config.def.h \
-		config.mk protocols dwl.1 dwl.c ime.h util.c util.h dwl.desktop \
-		dwl-$(VERSION)
-	tar -caf dwl-$(VERSION).tar.gz dwl-$(VERSION)
-	rm -rf dwl-$(VERSION)
+		config.mk protocols nullwl.1 nullwl.c ime.h util.c util.h nullwl.desktop \
+		nullwl-$(VERSION)
+	tar -caf nullwl-$(VERSION).tar.gz nullwl-$(VERSION)
+	rm -rf nullwl-$(VERSION)
 
-install: dwl
+install: nullwl
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	rm -f $(DESTDIR)$(PREFIX)/bin/dwl
-	cp -f dwl $(DESTDIR)$(PREFIX)/bin
-	chmod 755 $(DESTDIR)$(PREFIX)/bin/dwl
+	rm -f $(DESTDIR)$(PREFIX)/bin/nullwl
+	cp -f nullwl $(DESTDIR)$(PREFIX)/bin
+	chmod 755 $(DESTDIR)$(PREFIX)/bin/nullwl
 	mkdir -p $(DESTDIR)$(MANDIR)/man1
-	cp -f dwl.1 $(DESTDIR)$(MANDIR)/man1
-	chmod 644 $(DESTDIR)$(MANDIR)/man1/dwl.1
+	cp -f nullwl.1 $(DESTDIR)$(MANDIR)/man1
+	chmod 644 $(DESTDIR)$(MANDIR)/man1/nullwl.1
 	mkdir -p $(DESTDIR)$(DATADIR)/wayland-sessions
-	cp -f dwl.desktop $(DESTDIR)$(DATADIR)/wayland-sessions/dwl.desktop
-	chmod 644 $(DESTDIR)$(DATADIR)/wayland-sessions/dwl.desktop
+	cp -f nullwl.desktop $(DESTDIR)$(DATADIR)/wayland-sessions/nullwl.desktop
+	chmod 644 $(DESTDIR)$(DATADIR)/wayland-sessions/nullwl.desktop
 uninstall:
-	rm -f $(DESTDIR)$(PREFIX)/bin/dwl $(DESTDIR)$(MANDIR)/man1/dwl.1 \
-		$(DESTDIR)$(DATADIR)/wayland-sessions/dwl.desktop
+	rm -f $(DESTDIR)$(PREFIX)/bin/nullwl $(DESTDIR)$(MANDIR)/man1/nullwl.1 \
+		$(DESTDIR)$(DATADIR)/wayland-sessions/nullwl.desktop
 
 .SUFFIXES: .c .o
 .c.o:
-	$(CC) $(CPPFLAGS) $(DWLCFLAGS) -o $@ -c $<
+	$(CC) $(CPPFLAGS) $(NWLCFLAGS) -o $@ -c $<

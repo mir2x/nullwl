@@ -23,7 +23,7 @@ close_pipe(void *data)
 }
 
 static int
-dwl_dbus_dispatch(int fd, unsigned int mask, void *data)
+nwl_dbus_dispatch(int fd, unsigned int mask, void *data)
 {
 	DBusConnection *conn = data;
 
@@ -46,7 +46,7 @@ dwl_dbus_dispatch(int fd, unsigned int mask, void *data)
 }
 
 static int
-dwl_dbus_watch_handle(int fd, uint32_t mask, void *data)
+nwl_dbus_watch_handle(int fd, uint32_t mask, void *data)
 {
 	DBusWatch *watch = data;
 
@@ -70,7 +70,7 @@ dwl_dbus_watch_handle(int fd, uint32_t mask, void *data)
 }
 
 static dbus_bool_t
-dwl_dbus_add_watch(DBusWatch *watch, void *data)
+nwl_dbus_add_watch(DBusWatch *watch, void *data)
 {
 	struct wl_event_loop *loop = data;
 
@@ -89,7 +89,7 @@ dwl_dbus_add_watch(DBusWatch *watch, void *data)
 
 	fd = dbus_watch_get_unix_fd(watch);
 	watch_source = wl_event_loop_add_fd(loop, fd, mask,
-	                                    dwl_dbus_watch_handle, watch);
+	                                    nwl_dbus_watch_handle, watch);
 
 	dbus_watch_set_data(watch, watch_source, NULL);
 
@@ -97,7 +97,7 @@ dwl_dbus_add_watch(DBusWatch *watch, void *data)
 }
 
 static void
-dwl_dbus_remove_watch(DBusWatch *watch, void *data)
+nwl_dbus_remove_watch(DBusWatch *watch, void *data)
 {
 	struct wl_event_source *watch_source = dbus_watch_get_data(watch);
 
@@ -106,7 +106,7 @@ dwl_dbus_remove_watch(DBusWatch *watch, void *data)
 }
 
 static int
-dwl_dbus_timeout_handle(void *data)
+nwl_dbus_timeout_handle(void *data)
 {
 	DBusTimeout *timeout = data;
 
@@ -117,7 +117,7 @@ dwl_dbus_timeout_handle(void *data)
 }
 
 static dbus_bool_t
-dwl_dbus_add_timeout(DBusTimeout *timeout, void *data)
+nwl_dbus_add_timeout(DBusTimeout *timeout, void *data)
 {
 	struct wl_event_loop *loop = data;
 
@@ -130,7 +130,7 @@ dwl_dbus_add_timeout(DBusTimeout *timeout, void *data)
 	interval = dbus_timeout_get_interval(timeout);
 
 	timeout_source =
-		wl_event_loop_add_timer(loop, dwl_dbus_timeout_handle, timeout);
+		wl_event_loop_add_timer(loop, nwl_dbus_timeout_handle, timeout);
 
 	r = wl_event_source_timer_update(timeout_source, interval);
 	if (r < 0) {
@@ -144,7 +144,7 @@ dwl_dbus_add_timeout(DBusTimeout *timeout, void *data)
 }
 
 static void
-dwl_dbus_remove_timeout(DBusTimeout *timeout, void *data)
+nwl_dbus_remove_timeout(DBusTimeout *timeout, void *data)
 {
 	struct wl_event_source *timeout_source;
 
@@ -157,7 +157,7 @@ dwl_dbus_remove_timeout(DBusTimeout *timeout, void *data)
 }
 
 static void
-dwl_dbus_dispatch_status(DBusConnection *conn, DBusDispatchStatus status,
+nwl_dbus_dispatch_status(DBusConnection *conn, DBusDispatchStatus status,
                          void *data)
 {
 	int *pipefd = data;
@@ -197,20 +197,20 @@ startbus(DBusConnection *conn, struct wl_event_loop *loop)
 	dbus_connection_set_exit_on_disconnect(conn, FALSE);
 
 	bus_source = wl_event_loop_add_fd(loop, pipefd[0], WL_EVENT_READABLE,
-	                                  dwl_dbus_dispatch, conn);
+	                                  nwl_dbus_dispatch, conn);
 	if (!bus_source)
 		goto fail;
 
 	dbus_connection_set_dispatch_status_function(conn,
-	                                             dwl_dbus_dispatch_status,
+	                                             nwl_dbus_dispatch_status,
 	                                             pipefd, close_pipe);
-	if (!dbus_connection_set_watch_functions(conn, dwl_dbus_add_watch,
-	                                         dwl_dbus_remove_watch, NULL,
+	if (!dbus_connection_set_watch_functions(conn, nwl_dbus_add_watch,
+	                                         nwl_dbus_remove_watch, NULL,
 	                                         loop, NULL)) {
 		goto fail;
 	}
-	if (!dbus_connection_set_timeout_functions(conn, dwl_dbus_add_timeout,
-	                                           dwl_dbus_remove_timeout,
+	if (!dbus_connection_set_timeout_functions(conn, nwl_dbus_add_timeout,
+	                                           nwl_dbus_remove_timeout,
 	                                           NULL, loop, NULL)) {
 		goto fail;
 	}

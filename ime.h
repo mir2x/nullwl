@@ -49,7 +49,7 @@ struct wlr_input_method_manager_v2 *input_method_manager;
 struct wlr_text_input_manager_v3 *text_input_manager;
 struct input_method_relay *input_method_relay;
 
-/* functions used in dwl.c */
+/* functions used in nullwl.c */
 static int input_method_keyboard_grab_forward_key(
 		KeyboardGroup *keyboard, struct wlr_keyboard_key_event *event);
 static int input_method_keyboard_grab_forward_modifiers(KeyboardGroup *keyboard);

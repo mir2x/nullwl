@@ -1,5 +1,5 @@
-#ifndef DWLDBUS_H
-#define DWLDBUS_H
+#ifndef NWLDBUS_H
+#define NWLDBUS_H
 
 #include <dbus/dbus.h>
 #include <wayland-server-core.h>
@@ -7,4 +7,4 @@
 struct wl_event_source* startbus (DBusConnection *conn, struct wl_event_loop *loop);
 void stopbus (DBusConnection *conn, struct wl_event_source *bus_source);
 
-#endif /* DWLDBUS_H */
+#endif /* NWLDBUS_H */

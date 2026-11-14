@@ -43,7 +43,7 @@ static int log_level = WLR_ERROR;
 static const char *const autostart[] = {
         "dbus-update-activation-environment", "--systemd", "WAYLAND_DISPLAY", "XDG_CURRENT_DESKTOP",
                 "XCURSOR_THEME", "XCURSOR_SIZE", NULL, /* not QT_QPA_PLATFORMTHEME: it makes the KDE portal deadlock on FileChooser */
-        "dex", "--autostart", "--environment", "dwl", NULL,
+        "dex", "--autostart", "--environment", "nullwl", NULL,
         "/usr/lib/polkit-kde-authentication-agent-1", NULL,
         "sh", "-c", "pgrep -x dunst || exec dunst", NULL,
         "sh", "-c", "exec swaybg -i \"$HOME/Pictures/wallpaper.jpg\" -m fill", NULL,

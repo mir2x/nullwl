@@ -1034,13 +1034,13 @@ stopchildren(void)
 
 	for (i = 0; i < autostart_len; i++) {
 		if (autostart_pids[i] > 0) {
-			fprintf(stderr, "dwl: autostart pid %d ignored SIGTERM, killing\n", autostart_pids[i]);
+			fprintf(stderr, "nullwl: autostart pid %d ignored SIGTERM, killing\n", autostart_pids[i]);
 			kill(autostart_pids[i], SIGKILL);
 			waitpid(autostart_pids[i], NULL, WNOHANG);
 		}
 	}
 	if (child_pid > 0) {
-		fprintf(stderr, "dwl: startup command pid %d ignored SIGTERM, killing\n", child_pid);
+		fprintf(stderr, "nullwl: startup command pid %d ignored SIGTERM, killing\n", child_pid);
 		kill(-child_pid, SIGKILL);
 		waitpid(child_pid, NULL, WNOHANG);
 	}
@@ -1049,10 +1049,10 @@ stopchildren(void)
 void
 cleanup(void)
 {
-	fprintf(stderr, "dwl: cleanup: stopping children\n");
+	fprintf(stderr, "nullwl: cleanup: stopping children\n");
 	stopchildren(); /* while clients still have a compositor to talk to */
 
-	fprintf(stderr, "dwl: cleanup: destroying clients\n");
+	fprintf(stderr, "nullwl: cleanup: destroying clients\n");
 	cleanuplisteners();
 #ifdef XWAYLAND
 	wlr_xwayland_destroy(xwayland);
@@ -1060,7 +1060,7 @@ cleanup(void)
 #endif
 	wl_display_destroy_clients(dpy);
 
-	fprintf(stderr, "dwl: cleanup: tearing down\n");
+	fprintf(stderr, "nullwl: cleanup: tearing down\n");
 	wlr_xcursor_manager_destroy(cursor_mgr);
 
 	destroykeyboardgroup(&kb_group->destroy, NULL);
@@ -1075,7 +1075,7 @@ cleanup(void)
 	input_method_relay_finish(input_method_relay);
 	input_method_relay = NULL;
 
-	fprintf(stderr, "dwl: cleanup: destroying backend\n");
+	fprintf(stderr, "nullwl: cleanup: destroying backend\n");
 	/* If it's not destroyed manually, it will cause a use-after-free of wlr_seat.
 	 * Destroy it until it's fixed on the wlroots side */
 	wlr_backend_destroy(backend);
@@ -1086,7 +1086,7 @@ cleanup(void)
 	wlr_scene_node_destroy(&scene->tree.node);
 
 	drwl_fini();
-	fprintf(stderr, "dwl: cleanup: done\n");
+	fprintf(stderr, "nullwl: cleanup: done\n");
 }
 
 void
@@ -4044,7 +4044,7 @@ updatemons(struct wl_listener *listener, void *data)
 	}
 
 	if (stext[0] == '\0')
-		strncpy(stext, "dwl-"VERSION, sizeof(stext));
+		strncpy(stext, "nullwl-"VERSION, sizeof(stext));
 	wl_list_for_each(m, &mons, link) {
 		updatebar(m);
 		drawbar(m);
@@ -4385,7 +4385,7 @@ main(int argc, char *argv[])
 		else if (c == 'd')
 			log_level = WLR_DEBUG;
 		else if (c == 'v')
-			die("dwl " VERSION);
+			die("nullwl " VERSION " (fork of dwl)");
 		else
 			goto usage;
 	}
