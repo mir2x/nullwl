@@ -50,6 +50,19 @@ removes it. A bad line is reported as `file:line: reason` and skipped.
 Options that are only read at startup (font, bar and tray switches) say so
 when they change.
 
+## IPC
+
+`nullwlctl` talks to a running nullwl over a Unix socket (newline-delimited
+JSON): query monitors, windows and the tray, run any key-binding action, change
+options live, and subscribe to events (focus, tags, windows, layout, ...).
+See [IPC.md](IPC.md).
+
+```
+nullwlctl get clients | jq
+nullwlctl view 3
+nullwlctl subscribe focus tags
+```
+
 ## Building
 
 Dependencies: wlroots 0.20 (with libinput, and X11 for XWayland), wayland,

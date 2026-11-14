@@ -123,6 +123,7 @@ typedef struct Client Client;
 struct Client {
 	/* Must keep this field first */
 	unsigned int type; /* XDGShell or X11* */
+	uint32_t id; /* stable for the client's lifetime, used over IPC */
 
 	Monitor *mon;
 	struct wlr_scene_tree *scene;
@@ -584,6 +585,11 @@ typedef struct {
 static struct wl_list pointerdevs;
 static void configurepointer(struct wlr_pointer *pointer);
 static void reloadconfig(const Arg *arg);
+static void ipc_changed(void);
+static void ipc_config_reloaded(int errors);
+static void ipcstart(const char *display);
+static void ipcstop(void);
+static uint32_t nextclientid;
 
 /* built-in defaults, allows nested code to access above variables */
 #include "config.h"
@@ -593,6 +599,9 @@ static void reloadconfig(const Arg *arg);
 
 /* config file parsing and (re)loading */
 #include "rtconf.h"
+
+/* IPC: commands, state snapshots and events */
+#include "ipcstate.h"
 
 struct Pertag {
 	unsigned int curtag, prevtag; /* current and previous tag */
@@ -668,6 +677,7 @@ arrange(Monitor *m)
 {
 	Client *c;
 
+	ipc_changed();
 	if (!m->wlr_output->enabled)
 		return;
 
@@ -1075,6 +1085,7 @@ stopchildren(void)
 void
 cleanup(void)
 {
+	ipcstop();
 	fprintf(stderr, "nullwl: cleanup: stopping children\n");
 	stopchildren(); /* while clients still have a compositor to talk to */
 
@@ -1122,6 +1133,7 @@ cleanupmon(struct wl_listener *listener, void *data)
 	LayerSurface *l, *tmp;
 	size_t i;
 
+	ipc_changed();
 	/* m->layers[i] are intentionally not unlinked */
 	for (i = 0; i < LENGTH(m->layers); i++) {
 		wl_list_for_each_safe(l, tmp, &m->layers[i], link)
@@ -1449,6 +1461,7 @@ createmon(struct wl_listener *listener, void *data)
 	struct wlr_output_state state;
 	Monitor *m;
 
+	ipc_changed();
 	if (!wlr_output_init_render(wlr_output, alloc, drw))
 		return;
 
@@ -1963,6 +1976,7 @@ traynotify(void *data)
 {
 	Monitor *m = data;
 
+	ipc_changed();
 	drawbar(m);
 }
 
@@ -2090,6 +2104,7 @@ focusclient(Client *c, int lift)
 	Client *old_c = NULL;
 	LayerSurface *old_l = NULL;
 
+	ipc_changed();
 	if (locked)
 		return;
 
@@ -2564,6 +2579,8 @@ mapnotify(struct wl_listener *listener, void *data)
 	Monitor *m;
 	int i;
 
+	c->id = ++nextclientid;
+	ipc_changed();
 	/* Create scene tree for this client and its border */
 	c->scene = client_surface(c)->data = wlr_scene_tree_create(layers[LyrTile]);
 	/* Enabled later by a call to arrange() */
@@ -3093,6 +3110,7 @@ run(char *startup_cmd)
 	if (!socket)
 		die("startup: display_add_socket_auto");
 	setenv("WAYLAND_DISPLAY", socket, 1);
+	ipcstart(socket);
 
 	/* Start the backend. This will enumerate outputs and inputs, become the DRM
 	 * master, etc */
@@ -3177,6 +3195,7 @@ void
 setfloating(Client *c, int floating)
 {
 	Client *sc, *p = client_get_parent(c);
+	ipc_changed();
 	c->isfloating = floating;
 	/* If in floating layout do not change the client's layer */
 	if (!c->mon || !client_surface(c)->mapped || !c->mon->lt[c->mon->sellt]->arrange)
@@ -3204,6 +3223,7 @@ scratchpad_float_done:;
 void
 setfullscreen(Client *c, int fullscreen)
 {
+	ipc_changed();
 	c->isfullscreen = fullscreen;
 	if (!c->mon || !client_surface(c)->mapped)
 		return;
@@ -3980,6 +4000,7 @@ unmapnotify(struct wl_listener *listener, void *data)
 {
 	/* Called when the surface is unmapped, and should no longer be shown. */
 	Client *c = wl_container_of(listener, c, unmap);
+	ipc_changed();
 	if (c == grabc) {
 		cursor_mode = CurNormal;
 		grabc = NULL;
@@ -4174,6 +4195,7 @@ void
 updatetitle(struct wl_listener *listener, void *data)
 {
 	Client *c = wl_container_of(listener, c, set_title);
+	ipc_changed();
 	if (c == focustop(c->mon))
 		drawbars();
 }
@@ -4188,6 +4210,7 @@ urgent(struct wl_listener *listener, void *data)
 		return;
 
 	c->isurgent = 1;
+	ipc_changed();
 	drawbars();
 
 	if (client_surface(c)->mapped)

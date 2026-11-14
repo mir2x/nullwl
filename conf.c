@@ -9,16 +9,55 @@
 
 #include "conf.h"
 
+#define ERRLOG_MAX 32
+static char errlog[ERRLOG_MAX][256];
+static int nerrlog;
+static char *capbuf;
+static size_t caplen;
+
+void
+conf_capture(char *buf, size_t len)
+{
+	capbuf = buf;
+	caplen = len;
+	if (buf && len)
+		buf[0] = '\0';
+}
+
+void
+conf_errors_clear(void)
+{
+	nerrlog = 0;
+}
+
+int
+conf_errors_count(void)
+{
+	return nerrlog;
+}
+
+const char *
+conf_errors_get(int i)
+{
+	return i >= 0 && i < nerrlog ? errlog[i] : NULL;
+}
+
 void
 conf_error(const ConfPos *pos, const char *fmt, ...)
 {
+	char msg[200];
 	va_list ap;
 
-	fprintf(stderr, "nullwl: config: %s:%d: ", pos->file, pos->line);
 	va_start(ap, fmt);
-	vfprintf(stderr, fmt, ap);
+	vsnprintf(msg, sizeof msg, fmt, ap);
 	va_end(ap);
-	fputc('\n', stderr);
+	if (capbuf) {
+		snprintf(capbuf, caplen, "%s", msg);
+		return;
+	}
+	fprintf(stderr, "nullwl: config: %s:%d: %s\n", pos->file, pos->line, msg);
+	if (nerrlog < ERRLOG_MAX)
+		snprintf(errlog[nerrlog++], sizeof errlog[0], "%s:%d: %s", pos->file, pos->line, msg);
 }
 
 char *

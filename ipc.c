@@ -1,4 +1,5 @@
 /* See LICENSE file for copyright and license details. */
+#define _GNU_SOURCE /* accept4, SO_PEERCRED */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -36,12 +37,12 @@ jb_free(JBuf *b)
 static int
 jb_reserve(JBuf *b, size_t extra)
 {
-	size_t need = b->len + extra + 1;
+	size_t need = b->len + extra + 1, cap;
 	char *n;
 
 	if (need <= b->cap)
 		return 0;
-	size_t cap = b->cap ? b->cap : 256;
+	cap = b->cap ? b->cap : 256;
 	while (cap < need)
 		cap *= 2;
 	if (!(n = realloc(b->s, cap)))

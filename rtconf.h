@@ -660,6 +660,7 @@ loadconfig(int reload)
 	size_t i;
 	int errors;
 
+	conf_errors_clear();
 	if (!optsnapshot) {
 		for (i = 0; i < LENGTH(options); i++)
 			memcpy(optdefaults[i], options[i].ptr, optsize(options[i].type));
@@ -755,5 +756,6 @@ reloadconfig(const Arg *arg)
 	int errors = loadconfig(1);
 
 	applyconfig();
+	ipc_config_reloaded(errors);
 	fprintf(stderr, "nullwl: config reloaded%s\n", errors > 0 ? " with errors" : "");
 }

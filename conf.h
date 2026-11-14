@@ -31,6 +31,15 @@ int conf_load(const char *path, ConfHandler handler, void *ud);
 void conf_error(const ConfPos *pos, const char *fmt, ...)
 	__attribute__((format(printf, 2, 3)));
 
+/* Messages from conf_error() are also kept (the most recent 32) so they can be
+ * shown later, e.g. over IPC. */
+void conf_errors_clear(void);
+int conf_errors_count(void);
+const char *conf_errors_get(int i);
+/* While capturing, conf_error() writes the bare message into buf instead of
+ * logging it. Pass NULL to stop. */
+void conf_capture(char *buf, size_t len);
+
 /* In-place helpers. All return 0 on success, -1 on failure. */
 char *conf_trim(char *s);
 int conf_parse_bool(const char *s, int *out);
