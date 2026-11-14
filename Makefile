@@ -4,7 +4,7 @@
 include config.mk
 
 # flags for compiling
-NWLCPPFLAGS = -I. -NWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L \
+NWLCPPFLAGS = -I. -DWLR_USE_UNSTABLE -D_POSIX_C_SOURCE=200809L \
 	-DVERSION=\"$(VERSION)\" $(XWAYLAND)
 NWLDEVCFLAGS = -g -Wpedantic -Wall -Wextra -Wdeclaration-after-statement \
 	-Wno-unused-parameter -Wshadow -Wunused-macros -Werror=strict-prototypes \
