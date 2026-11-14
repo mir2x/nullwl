@@ -3162,6 +3162,10 @@ run(char *startup_cmd)
 	if (!socket)
 		die("startup: display_add_socket_auto");
 	setenv("WAYLAND_DISPLAY", socket, 1);
+	/* xdg-desktop-portal picks its backend from this; "wlroots" selects
+	 * xdg-desktop-portal-wlr (screenshots, screen sharing). Respect a value the
+	 * user already set. */
+	setenv("XDG_CURRENT_DESKTOP", "wlroots", 0);
 	ipcstart(socket);
 
 	/* Start the backend. This will enumerate outputs and inputs, become the DRM
