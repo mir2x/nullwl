@@ -143,7 +143,8 @@ build_request(int argc, char **argv)
 		else if (!strcmp(op, "motion") || !strcmp(op, "click")) { names[0] = "x"; names[1] = "y"; n = 2; }
 		else if (!strcmp(op, "scroll")) { names[0] = "x"; names[1] = "y"; names[2] = "delta"; n = 3; }
 		else if (!strcmp(op, "dump")) { names[0] = "path"; n = 1; }
-		else if (strcmp(op, "state") && strcmp(op, "close"))
+		else if (!strcmp(op, "hover")) { names[0] = "x"; names[1] = "y"; n = 2; }
+		else if (strcmp(op, "state") && strcmp(op, "close") && strcmp(op, "tooltip"))
 			usage();
 		if (argc != 2 + n && !(n == 0 && argc <= 2))
 			usage();

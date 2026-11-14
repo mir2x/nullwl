@@ -13,6 +13,7 @@
 
 static void reloadconfig(const Arg *arg);
 static void popup_close(void);
+static void tip_reset(void);
 
 /* ------------------------------------------------------------------ */
 /* arena: everything the config file allocates, freed on every reload  */
@@ -770,6 +771,7 @@ reloadconfig(const Arg *arg)
 	int errors;
 
 	popup_close(); /* it holds a font the reload may replace */
+	tip_reset();
 	errors = loadconfig(1);
 
 	applyconfig();

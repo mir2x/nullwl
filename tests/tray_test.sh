@@ -30,7 +30,7 @@ start fallback --icon-name no-such-icon-xyz --pixmap
 start passive  --icon-name network-wireless --status Passive
 start letter   
 start attn     --icon-name network-wireless --attention-name network-error
-start menu     --menu --icon-name network-wireless-signal-good
+start menu     --menu --icon-name network-wireless-signal-good --tip-title Network --tip-text "Signal: <b>good</b><br>SSID: a&amp;b"
 sleep 2
 
 field() { $C get tray | python3 -c "import json,sys; d=[i for i in json.load(sys.stdin) if i['app_id']=='$1']; print(d[0]['$2'] if d else 'MISSING')"; }
@@ -78,6 +78,25 @@ check "middle click = SecondaryActivate"       "$(grep -c '^attn: SecondaryActiv
 check "right click without dbusmenu = ContextMenu" "$(grep -c '^attn: ContextMenu' "$LOG")" 1
 check "the click lands on the right item"      "$(grep -c '^themed: Activate' "$LOG")" 1
 check "no click leaked to the others"          "$(grep -vc '^attn:\|^themed:' "$LOG")" 0
+
+echo "== hover tooltips"
+tq() { $C popup tooltip | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
+rect() { $C get tray | python3 -c "import json,sys; r=[i for i in json.load(sys.stdin) if i['app_id']=='$1'][0]['rect']; print(r['x']+r['w']//2, r['y']+r['h']//2)"; }
+check "ToolTip title/text read"      "$($C get tray | python3 -c "import json,sys; i=[i for i in json.load(sys.stdin) if i['app_id']=='menu'][0]; print(i['tooltip_title'], '|', repr(i['tooltip_text']))")" "Network | 'Signal: good\nSSID: a&b'"
+check "no ToolTip: falls back to Title" "$($C get tray | python3 -c "import json,sys; print([i for i in json.load(sys.stdin) if i['app_id']=='themed'][0]['tooltip_title'])")" themed
+$C popup hover $(rect menu); sleep 0.2
+check "not shown straight away"      "$(tq "d['visible']")" False
+sleep 0.7
+check "shown after the delay"        "$(tq "d['visible']")" True
+check "title and description lines"  "$(tq "d['lines']")" "['Network', 'Signal: good', 'SSID: a&b']"
+$C popup dump "$OUT/5_tooltip.png"
+$C popup hover 5 400; sleep 0.2
+check "hidden when the pointer leaves" "$(tq "d['visible']")" False
+$C popup hover $(rect menu); $C popup hover 5 400; sleep 0.9
+check "moving away before the delay cancels it" "$(tq "d['visible']")" False
+$C popup hover $(rect themed); sleep 0.9
+check "another icon: its own tooltip" "$(tq "d['lines']")" "['themed']"
+$C popup hover 5 400
 
 echo "== native popup menu"
 pq() { $C popup state | python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }

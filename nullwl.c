@@ -815,6 +815,7 @@ axisnotify(struct wl_listener *listener, void *data)
 	struct wlr_scene_buffer *buffer;
 	Monitor *m;
 	Client *under = NULL;
+	tip_reset();
 	if (popup_active()) {
 		popup_scroll(cursor->x, cursor->y, event->delta);
 		return;
@@ -938,6 +939,7 @@ buttonpress(struct wl_listener *listener, void *data)
 
 	wlr_idle_notifier_v1_notify_activity(idle_notifier, seat);
 
+	tip_reset();
 	if (popup_active() && popup_button(cursor->x, cursor->y,
 			event->state == WL_POINTER_BUTTON_STATE_PRESSED))
 		return;
@@ -1163,6 +1165,7 @@ cleanupmon(struct wl_listener *listener, void *data)
 	size_t i;
 
 	popup_dismiss(0);
+	tip_reset();
 	ipc_changed();
 	/* m->layers[i] are intentionally not unlinked */
 	for (i = 0; i < LENGTH(m->layers); i++) {
@@ -2844,6 +2847,7 @@ motionnotify(uint32_t time, struct wlr_input_device *device, double dx, double d
 		popup_motion(cursor->x, cursor->y);
 		return;
 	}
+	tip_motion(cursor->x, cursor->y);
 
 	/* Update drag icon's position */
 	wlr_scene_node_set_position(&drag_icon->node, (int)round(cursor->x), (int)round(cursor->y));
@@ -4217,6 +4221,7 @@ updatebar(Monitor *m)
 		return;
 
 	popup_close(); /* it uses this font */
+	tip_reset();
 	drwl_font_destroy(m->drw->font);
 	snprintf(fontattrs, sizeof(fontattrs), "dpi=%.2f", 96. * m->wlr_output->scale);
 	if (!(drwl_font_create(m->drw, LENGTH(fonts), fonts, fontattrs)))

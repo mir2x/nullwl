@@ -38,6 +38,12 @@ typedef void (*TrayMenuFn)(Watcher *watcher, const char *busname, const char *me
                            const char *icondir, int x, int y);
 void tray_click (Tray *tray, unsigned int index, int button, int x, int y,
                  TrayMenuFn showmenu);
+/* x offset of the idx-th shown icon from the tray's left edge, and its width */
+int tray_item_x (const Tray *tray, int index);
+/* What to show when hovering: the ToolTip title and text, falling back to the
+ * item's Title. Strings belong to the item and stay valid until the next
+ * property refresh. Returns 0 when there is nothing to show. */
+int tray_tooltip (Tray *tray, unsigned int index, const char **title, const char **text);
 void tray_scroll (Tray *tray, unsigned int index, int delta, int horizontal);
 
 #endif /* TRAY_H */

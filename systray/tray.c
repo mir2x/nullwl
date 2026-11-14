@@ -273,6 +273,31 @@ tray_click(Tray *tray, unsigned int index, int button, int x, int y, TrayMenuFn 
 	}
 }
 
+int
+tray_item_x(const Tray *tray, int index)
+{
+	return tray->spacing / 2 + index * (tray->height + tray->spacing);
+}
+
+int
+tray_tooltip(Tray *tray, unsigned int index, const char **title, const char **text)
+{
+	Item *item = nth_visible(tray_get_watcher(tray), index);
+	const char *t, *d;
+
+	if (!item)
+		return 0;
+	t = item->tip_title && *item->tip_title ? item->tip_title : item->title;
+	d = item->tip_text && *item->tip_text ? item->tip_text : NULL;
+	if ((!t || !*t) && !d)
+		t = item->appid;
+	if ((!t || !*t) && !d)
+		return 0;
+	*title = t && *t ? t : NULL;
+	*text = d;
+	return 1;
+}
+
 void
 tray_scroll(Tray *tray, unsigned int index, int delta, int horizontal)
 {

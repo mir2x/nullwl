@@ -9,5 +9,6 @@ nullwl's own changes are listed here. For dwl's history before the fork point
   (Qt, KDE) can now register; exact click targets; middle click and scroll.
 - Tray menus are drawn by nullwl (checkmarks, radios, icons, submenus, keyboard
   and wheel navigation) instead of piping to rofi.
+- Tray: hover tooltips (the ToolTip property, else the title) after 500 ms; HTML markup in the description is stripped.
 - IPC: `popup` command, richer `get tray`, `dump-tray`.
 - Forked from dwl 49ca434 (v0.8-12, wlroots 0.20) and renamed to nullwl.

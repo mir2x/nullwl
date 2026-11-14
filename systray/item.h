@@ -30,6 +30,7 @@ typedef struct Item {
 	char *menu_busobj;   /* dbusmenu object path, or NULL when the item has none */
 	char *appid;         /* the Id property */
 	char *title;
+	char *tip_title, *tip_text; /* ToolTip property: title and description (markup stripped) */
 	char *icon_name, *theme_path, *attention_name;
 	Icon *icon;          /* what is drawn; points at one of the two below */
 	Icon *icon_normal, *icon_attention;

@@ -33,7 +33,7 @@ Also from upstream dwl's contributor Guido Cella: IME support (input-method
 and text-input protocols) and a use-after-free fix.
 
 nullwl's own changes: coloured status text in the bar, ordered shutdown with
-child cleanup, a StatusNotifierItem system tray (themed icons, native popup menus with submenus, scroll), XWayland
+child cleanup, a StatusNotifierItem system tray (themed icons, native popup menus with submenus, hover tooltips, scroll), XWayland
 enabled, the Tokyo Night theme, and keybinding changes.
 
 ## Configuration

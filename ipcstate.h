@@ -151,6 +151,8 @@ jstr(JBuf *b, const char *key, const char *v)
 	jb_str(b, v);
 }
 
+static void ipcjtrayplace(JBuf *b, Item *it);
+
 static void
 jclient(JBuf *b, const Client *c, uint32_t focusid)
 {
@@ -475,6 +477,7 @@ cmdget(IpcClient *cl, const IpcReq *req)
 			jbool(&b, "has_menu", item_has_menu(it));
 			jbool(&b, "menu_only", it->is_menu);
 			jbool(&b, "ready", it->ready);
+			ipcjtrayplace(&b, it);
 			jb_printf(&b, "}");
 		}
 		jb_printf(&b, "]");
@@ -615,6 +618,40 @@ cmdfocus(IpcClient *cl, const IpcReq *req, int close)
 }
 
 static void popup_ipc(IpcClient *cl, const IpcReq *req); /* popup.h */
+
+/* Where a tray item is drawn on the selected monitor (layout coordinates), the
+ * text a hover would show, and its position among the shown icons. */
+static void
+ipcjtrayplace(JBuf *b, Item *it)
+{
+	Monitor *m = selmon;
+	unsigned idx = 0;
+	Item *o;
+	const char *title = NULL, *text = NULL;
+
+	if (!item_visible(it) || !m || !m->tray) {
+		jnum(b, "index", -1);
+		return;
+	}
+	wl_list_for_each(o, &watcher.items, link) {
+		if (o == it)
+			break;
+		if (item_visible(o))
+			idx++;
+	}
+	jnum(b, "index", idx);
+	jb_key(b, "rect");
+	jb_printf(b, "{");
+	jnum(b, "x", m->m.x + lround((m->b.width - tray_get_width(m->tray) + tray_item_x(m->tray, (int)idx)) / (double)m->wlr_output->scale));
+	jnum(b, "y", m->m.y + (topbar ? 0 : m->m.height - m->b.real_height));
+	jnum(b, "w", lround(tray_get_icon_width(m->tray) / (double)m->wlr_output->scale));
+	jnum(b, "h", m->b.real_height);
+	jb_printf(b, "}");
+	if (tray_tooltip(m->tray, idx, &title, &text)) {
+		jstr(b, "tooltip_title", title);
+		jstr(b, "tooltip_text", text);
+	}
+}
 
 /* Debugging aid: write what the tray currently looks like to a PNG. */
 static void

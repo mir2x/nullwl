@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 // IWYU pragma: no_include "dbus/dbus-protocol.h"
 // IWYU pragma: no_include "dbus/dbus-shared.h"
@@ -53,7 +54,7 @@ set_str(char **dst, const char *v)
 /* ---- decoding the a{sv} that GetAll returns ---- */
 
 typedef struct {
-	char *id, *title, *status;
+	char *id, *title, *status, *tip_title, *tip_text;
 	char *icon_name, *theme_path, *attention_name, *menu;
 	int is_menu;
 	Icon *pixmap, *attention_pixmap;
@@ -108,6 +109,65 @@ pick_pixmap(DBusMessageIter *variant)
 	return best;
 }
 
+/* ToolTip is (sa(iiay)ss): icon name, icon data, title, description. The
+ * description may carry a little HTML (<b>, <br>, entities); keep the text. */
+static char *
+strip_markup(const char *s)
+{
+	char *out = malloc(strlen(s) + 1), *o = out;
+	int tag = 0;
+
+	if (!out)
+		return NULL;
+	for (; *s; s++) {
+		if (tag) {
+			if (*s == '>')
+				tag = 0;
+		} else if (*s == '<') {
+			tag = 1;
+			if (!strncasecmp(s, "<br", 3) || !strncasecmp(s, "</p", 3))
+				*o++ = '\n';
+		} else if (*s == '&') {
+			static const struct { const char *e; char c; } ent[] = {
+				{"&amp;", '&'}, {"&lt;", '<'}, {"&gt;", '>'}, {"&quot;", '"'}, {"&apos;", '\''}, {"&nbsp;", ' '} };
+			size_t i;
+
+			for (i = 0; i < sizeof(ent) / sizeof(*ent); i++)
+				if (!strncmp(s, ent[i].e, strlen(ent[i].e))) {
+					*o++ = ent[i].c;
+					s += strlen(ent[i].e) - 1;
+					break;
+				}
+			if (i == sizeof(ent) / sizeof(*ent))
+				*o++ = '&';
+		} else {
+			*o++ = *s;
+		}
+	}
+	*o = '\0';
+	return out;
+}
+
+static void
+parse_tooltip(Props *p, DBusMessageIter *var)
+{
+	DBusMessageIter st;
+	const char *title = NULL, *text = NULL;
+	int i;
+
+	if (dbus_message_iter_get_arg_type(var) != DBUS_TYPE_STRUCT)
+		return;
+	dbus_message_iter_recurse(var, &st);
+	for (i = 0; i < 4 && dbus_message_iter_get_arg_type(&st) != DBUS_TYPE_INVALID; i++) {
+		if (i >= 2 && dbus_message_iter_get_arg_type(&st) == DBUS_TYPE_STRING)
+			dbus_message_iter_get_basic(&st, i == 2 ? &title : &text);
+		dbus_message_iter_next(&st);
+	}
+	free(p->tip_title); free(p->tip_text);
+	p->tip_title = title ? strip_markup(title) : NULL;
+	p->tip_text = text ? strip_markup(text) : NULL;
+}
+
 static void
 parse_props(Props *p, DBusMessageIter *reply)
 {
@@ -146,6 +206,8 @@ parse_props(Props *p, DBusMessageIter *reply)
 			dbus_bool_t b;
 			dbus_message_iter_get_basic(&var, &b);
 			p->is_menu = b;
+		} else if (!strcmp(key, "ToolTip")) {
+			parse_tooltip(p, &var);
 		} else if (!strcmp(key, "IconPixmap")) {
 			if (p->pixmap) destroyicon(p->pixmap);
 			p->pixmap = pick_pixmap(&var);
@@ -159,7 +221,7 @@ parse_props(Props *p, DBusMessageIter *reply)
 static void
 props_free(Props *p)
 {
-	free(p->id); free(p->title); free(p->status);
+	free(p->id); free(p->title); free(p->status); free(p->tip_title); free(p->tip_text);
 	free(p->icon_name); free(p->theme_path); free(p->attention_name); free(p->menu);
 	if (p->pixmap) destroyicon(p->pixmap);
 	if (p->attention_pixmap) destroyicon(p->attention_pixmap);
@@ -241,6 +303,8 @@ props_ready(DBusPendingCall *pending, void *data)
 
 	set_str(&item->appid, p.id);
 	set_str(&item->title, p.title);
+	set_str(&item->tip_title, p.tip_title);
+	set_str(&item->tip_text, p.tip_text);
 	item->status = parse_status(p.status);
 	item->is_menu = p.is_menu;
 	free(item->menu_busobj);
@@ -430,6 +494,8 @@ destroyitem(Item *item)
 	free(item->owner);
 	free(item->appid);
 	free(item->title);
+	free(item->tip_title);
+	free(item->tip_text);
 	free(item->icon_name);
 	free(item->theme_path);
 	free(item->attention_name);

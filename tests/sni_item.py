@@ -21,7 +21,7 @@ XML = """<node><interface name="org.kde.StatusNotifierItem">
 <property name="WindowId" type="u" access="read"/><property name="IconName" type="s" access="read"/>
 <property name="IconPixmap" type="a(iiay)" access="read"/><property name="IconThemePath" type="s" access="read"/>
 <property name="AttentionIconName" type="s" access="read"/><property name="AttentionIconPixmap" type="a(iiay)" access="read"/>
-<property name="ItemIsMenu" type="b" access="read"/><property name="Menu" type="o" access="read"/>
+<property name="ToolTip" type="(sa(iiay)ss)" access="read"/><property name="ItemIsMenu" type="b" access="read"/><property name="Menu" type="o" access="read"/>
 <method name="Activate"><arg type="i" name="x" direction="in"/><arg type="i" name="y" direction="in"/></method>
 <method name="SecondaryActivate"><arg type="i" name="x" direction="in"/><arg type="i" name="y" direction="in"/></method>
 <method name="ContextMenu"><arg type="i" name="x" direction="in"/><arg type="i" name="y" direction="in"/></method>
@@ -38,6 +38,8 @@ ap.add_argument("--attention-name", default="")
 ap.add_argument("--pixmap", action="store_true")
 ap.add_argument("--status", default="Active")
 ap.add_argument("--menu-only", action="store_true")
+ap.add_argument("--tip-title", default="")
+ap.add_argument("--tip-text", default="")
 ap.add_argument("--menu", action="store_true", help="serve a dbusmenu")
 ap.add_argument("--log", default="/dev/null")
 args = ap.parse_args()
@@ -62,6 +64,7 @@ def get_property(conn, sender, path, iface, prop):
         "IconPixmap": pixmap_variant(), "IconThemePath": GLib.Variant("s", args.theme_path),
         "AttentionIconName": GLib.Variant("s", state["attention"]),
         "AttentionIconPixmap": GLib.Variant("a(iiay)", []),
+        "ToolTip": GLib.Variant("(sa(iiay)ss)", ("", [], args.tip_title, args.tip_text)),
         "ItemIsMenu": GLib.Variant("b", args.menu_only), "Menu": GLib.Variant("o", "/MenuBar" if args.menu else "/NO_DBUSMENU"),
     }[prop]
 

@@ -71,10 +71,19 @@ static const struct wlr_buffer_impl popbuf_impl = {
 	.end_data_ptr_access = popbuf_end,
 };
 
+static void tip_reset(void);
+
 static int
 popup_active(void)
 {
 	return pop.menu != NULL;
+}
+
+static void
+popup_ensure_drw(void)
+{
+	if (!pop.drw && !(pop.drw = drwl_create()))
+		die("drwl_create:");
 }
 
 static void
@@ -542,8 +551,7 @@ popup_ready(Menu *menu, void *ud)
 	pop.menu = menu;
 	pop.mon = m;
 	pop.scale = m->wlr_output->scale;
-	if (!pop.drw && !(pop.drw = drwl_create()))
-		die("drwl_create:");
+	popup_ensure_drw();
 	drwl_setfont(pop.drw, m->drw->font);
 	pop.fh = m->drw->font->height;
 	pop.rowh = pop.fh + pop.fh / 2;
@@ -587,8 +595,192 @@ popup_open(Watcher *w, const char *busname, const char *menu_obj, const char *ic
 	if (!m || !m->drw || !m->drw->font)
 		return;
 	popup_close();
+	tip_reset();
 	pop.ax = (int)((x - m->m.x) * m->wlr_output->scale);
 	pop.req = menu_fetch(w->conn, busname, menu_obj, icondir, m->drw->font->height, popup_ready, m);
+}
+
+/* ------------------------------------------------------------------ */
+/* tray tooltips: shown after the pointer rests on an icon             */
+/* ------------------------------------------------------------------ */
+#define TIP_DELAY_MS 500
+#define TIP_MAXLINES 12
+
+static struct {
+	struct wlr_scene_buffer *sb;
+	struct wlr_buffer *buf;    /* what sb shows, kept for dumping */
+	struct wl_event_source *timer;
+	Monitor *mon;
+	int idx;                   /* icon the pointer is on, or -1 */
+	int px;                    /* pointer x in monitor pixels when it arrived */
+	int x, y, w, h;            /* layout coordinates while shown */
+	char lines[TIP_MAXLINES][160];
+	int nlines;
+} tip = { .idx = -1 };
+
+static void
+tip_hide(void)
+{
+	if (tip.buf) {
+		wlr_buffer_unlock(tip.buf);
+		tip.buf = NULL;
+	}
+	if (tip.sb) {
+		wlr_scene_node_destroy(&tip.sb->node);
+		tip.sb = NULL;
+	}
+	tip.nlines = 0;
+}
+
+static void
+tip_reset(void)
+{
+	tip_hide();
+	tip.idx = -1;
+	tip.mon = NULL;
+	if (tip.timer)
+		wl_event_source_timer_update(tip.timer, 0);
+}
+
+/* split title and description into display lines */
+static void
+tip_collect(const char *title, const char *text)
+{
+	const char *parts[2] = { title, text }, *p;
+	int i;
+
+	tip.nlines = 0;
+	for (i = 0; i < 2; i++)
+		for (p = parts[i]; p && *p && tip.nlines < TIP_MAXLINES;) {
+			const char *e = strchr(p, '\n');
+			size_t n = e ? (size_t)(e - p) : strlen(p);
+
+			if (n >= sizeof(tip.lines[0]))
+				n = sizeof(tip.lines[0]) - 1;
+			if (n) {
+				memcpy(tip.lines[tip.nlines], p, n);
+				tip.lines[tip.nlines++][n] = '\0';
+			}
+			p = e ? e + 1 : p + strlen(p);
+		}
+}
+
+static void
+tip_show(void)
+{
+	Monitor *m = tip.mon;
+	const char *title = NULL, *text = NULL;
+	uint32_t *norm = colors[SchemeNorm], border[3];
+	double scale;
+	int i, fh, pad, bw, w = 0, h, W, H, x, y, tw;
+	PopBuf *pb;
+	pixman_color_t clear = {0, 0, 0, 0};
+
+	tip_hide();
+	if (!m || !m->tray || !m->drw->font || popup_active() || tip.idx < 0
+			|| !tray_tooltip(m->tray, (unsigned)tip.idx, &title, &text))
+		return;
+	tip_collect(title, text);
+	if (!tip.nlines)
+		return;
+	popup_ensure_drw();
+	drwl_setfont(pop.drw, m->drw->font);
+	scale = m->wlr_output->scale;
+	fh = m->drw->font->height;
+	pad = fh / 2;
+	bw = MAX(1, (int)lround(scale));
+	for (i = 0; i < tip.nlines; i++)
+		if ((tw = drwl_font_getwidth(pop.drw, tip.lines[i])) > w)
+			w = tw;
+	W = (int)(m->m.width * scale);
+	H = (int)(m->m.height * scale);
+	w += 2 * pad + 2 * bw;
+	h = tip.nlines * fh + 2 * (pad / 2) + 2 * bw;
+	if (w > W)
+		w = W;
+	x = tip.px - w / 2;
+	x = MAX(0, MIN(x, W - w));
+	y = !showbar ? 0 : topbar ? m->b.height + bw * 2 : H - m->b.height - h - bw * 2;
+	y = MAX(0, MIN(y, H - h));
+
+	border[0] = norm[ColBorder]; border[1] = norm[ColBg]; border[2] = norm[ColBorder];
+	pb = ecalloc(1, sizeof(*pb) + (size_t)w * h * 4);
+	pb->image = drwl_image_create(NULL, w, h, pb->data);
+	wlr_buffer_init(&pb->base, &popbuf_impl, w, h);
+	drwl_setimage(pop.drw, pb->image);
+	pixman_image_fill_rectangles(PIXMAN_OP_SRC, pb->image, &clear, 1, &(pixman_rectangle16_t){0, 0, w, h});
+	drwl_setscheme(pop.drw, border);
+	drwl_rect(pop.drw, 0, 0, w, h, 1, 0);
+	drwl_setscheme(pop.drw, norm);
+	drwl_rect(pop.drw, bw, bw, w - 2 * bw, h - 2 * bw, 1, 1);
+	for (i = 0; i < tip.nlines; i++)
+		drwl_text(pop.drw, bw, bw + pad / 2 + i * fh, w - 2 * bw, fh, pad, tip.lines[i], 0);
+	drwl_setimage(pop.drw, NULL);
+
+	tip.sb = wlr_scene_buffer_create(layers[LyrOverlay], NULL);
+	if (!tip.sb) {
+		wlr_buffer_drop(&pb->base);
+		return;
+	}
+	tip.x = m->m.x + (int)lround(x / scale);
+	tip.y = m->m.y + (int)lround(y / scale);
+	tip.w = (int)lround(w / scale);
+	tip.h = (int)lround(h / scale);
+	wlr_scene_buffer_set_dest_size(tip.sb, tip.w, tip.h);
+	wlr_scene_node_set_position(&tip.sb->node, tip.x, tip.y);
+	wlr_scene_buffer_set_buffer(tip.sb, &pb->base);
+	tip.buf = wlr_buffer_lock(&pb->base);
+	wlr_buffer_drop(&pb->base);
+}
+
+static int
+tip_fire(void *data)
+{
+	tip_show();
+	return 0;
+}
+
+/* The tray icon under a layout position, or -1. */
+static int
+tray_index_under(double lx, double ly, Monitor **mp)
+{
+	Client *under = NULL;
+	Monitor *m;
+	struct wlr_scene_node *node;
+	int tw, cx;
+
+	xytonode(lx, ly, NULL, &under, NULL, NULL, NULL);
+	if (under || locked || exclusive_focus || !(m = xytomon(lx, ly)) || !m->tray)
+		return -1;
+	node = wlr_scene_node_at(&layers[LyrBottom]->node, lx, ly, NULL, NULL);
+	if (!node || node->type != WLR_SCENE_NODE_BUFFER || wlr_scene_buffer_from_node(node) != m->scene_buffer)
+		return -1;
+	tw = tray_get_width(m->tray);
+	cx = (int)((lx - m->m.x) * m->wlr_output->scale);
+	if (tw <= 0 || cx <= m->b.width - tw)
+		return -1;
+	*mp = m;
+	return tray_index_at(m->tray, cx - (m->b.width - tw));
+}
+
+/* Called on every pointer motion. */
+static void
+tip_motion(double lx, double ly)
+{
+	Monitor *m = NULL;
+	int idx = tray_index_under(lx, ly, &m);
+
+	if (idx == tip.idx && (idx < 0 || m == tip.mon))
+		return;
+	tip_reset();
+	if (idx < 0)
+		return;
+	tip.idx = idx;
+	tip.mon = m;
+	tip.px = (int)((lx - m->m.x) * m->wlr_output->scale);
+	if (!tip.timer && !(tip.timer = wl_event_loop_add_timer(event_loop, tip_fire, NULL)))
+		return;
+	wl_event_source_timer_update(tip.timer, TIP_DELAY_MS);
 }
 
 /* IPC "popup" command, for scripting and tests:
@@ -641,6 +833,54 @@ popup_ipc(IpcClient *cl, const IpcReq *req)
 		jb_printf(&b, "]}");
 		ipc_reply_ok(cl, b.s);
 		jb_free(&b);
+		return;
+	}
+	if (!strcmp(op, "hover")) { /* as if the pointer moved there */
+		tip_motion(x, y);
+		ipc_reply_ok(cl, NULL);
+		return;
+	}
+	if (!strcmp(op, "tooltip")) {
+		jb_init(&b);
+		jb_printf(&b, "{");
+		jbool(&b, "visible", tip.sb != NULL);
+		jb_key(&b, "lines");
+		jb_printf(&b, "[");
+		for (i = 0; i < tip.nlines; i++) {
+			jb_sep(&b);
+			jb_str(&b, tip.lines[i]);
+		}
+		jb_printf(&b, "]");
+		jnum(&b, "x", tip.x);
+		jnum(&b, "y", tip.y);
+		jnum(&b, "w", tip.w);
+		jnum(&b, "h", tip.h);
+		jb_printf(&b, "}");
+		ipc_reply_ok(cl, b.s);
+		jb_free(&b);
+		return;
+	}
+	if (!strcmp(op, "dump") && !popup_active() && tip.buf) {
+		const char *path = ipc_req_get(req, "path");
+		void *data;
+		uint32_t fmt;
+		size_t stride;
+		cairo_surface_t *cs;
+		cairo_status_t st;
+
+		if (!path || !*path || !wlr_buffer_begin_data_ptr_access(tip.buf, WLR_BUFFER_DATA_PTR_ACCESS_READ, &data, &fmt, &stride)) {
+			ipc_reply_err(cl, "popup dump: needs a 'path'");
+			return;
+		}
+		cs = cairo_image_surface_create_for_data(data, CAIRO_FORMAT_ARGB32, tip.buf->width, tip.buf->height, (int)stride);
+		st = cairo_surface_write_to_png(cs, path);
+		cairo_surface_destroy(cs);
+		wlr_buffer_end_data_ptr_access(tip.buf);
+		if (st != CAIRO_STATUS_SUCCESS) {
+			ipc_reply_err(cl, "popup dump: cannot write %s", path);
+			return;
+		}
+		ipc_reply_ok(cl, NULL);
 		return;
 	}
 	if (!popup_active()) {
