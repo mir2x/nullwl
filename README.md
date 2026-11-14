@@ -15,8 +15,6 @@
 >   it is a change made in nullwl: `git diff a0221a5 HEAD` shows all of it.
 > - **nullwl does not track dwl.** There is no upstream remote and no merging.
 >   Fixes from dwl are only brought over by hand.
-> - dwl's changelog up to the fork point is kept as
->   [CHANGELOG-dwl.md](CHANGELOG-dwl.md).
 
 nullwl is a personal Wayland compositor based on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots).
 Like dwl it is small, configured at compile time through `config.h`, and meant
